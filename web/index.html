@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Como Votar — atuação de deputados federais</title>
-<meta name="description" content="Propostas, votos, gastos e presença de cada deputado federal, com dados abertos da Câmara dos Deputados.">
+<title>Como Votar — atuação de parlamentares</title>
+<meta name="description" content="Propostas, votos, gastos e presença de cada deputado federal e senador, com dados abertos da Câmara dos Deputados e do Senado Federal.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30' %3E%3Crect x='1' y='4' width='28' height='22' rx='4' fill='%23009c3b' stroke='%23fff' stroke-width='1.5'/%3E%3Cpolygon points='15,7.5 26,15 15,22.5 4,15' fill='%23ffdf00'/%3E%3Ccircle cx='15' cy='15' r='4.6' fill='%23002776'/%3E%3C/svg%3E">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="pt_BR">
-<meta property="og:title" content="Como Votar — atuação de deputados federais">
-<meta property="og:description" content="Propostas, votos, gastos e presença de cada deputado federal, com dados abertos da Câmara dos Deputados.">
+<meta property="og:title" content="Como Votar — atuação de parlamentares">
+<meta property="og:description" content="Propostas, votos, gastos e presença de cada deputado federal e senador, com dados abertos da Câmara dos Deputados e do Senado Federal.">
 <meta name="theme-color" content="#007a35">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -17,7 +17,8 @@
 <header class="top">
   <div class="wrap">
     <a href="#/" class="brand"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect x="1" y="4" width="28" height="22" rx="4" fill="#009c3b" stroke="#fff" stroke-width="1.5"/><polygon points="15,7.5 26,15 15,22.5 4,15" fill="#ffdf00"/><circle cx="15" cy="15" r="4.6" fill="#002776"/></svg><span>Como Votar</span></a>
-    <span class="tag">Deputados federais · legislatura 2023–2026 · dados abertos da Câmara</span>
+    <nav class="casas" aria-label="Casa legislativa"><a href="#/" data-casa="camara">Câmara dos Deputados</a><a href="#/senado" data-casa="senado">Senado Federal</a></nav>
+    <span class="tag" id="tagcasa">Legislatura 2023–2026 · dados abertos da Câmara e do TSE</span>
     <span class="upd" id="atualizacao"></span>
   </div>
 </header>

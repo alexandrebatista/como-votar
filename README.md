@@ -1,6 +1,6 @@
 # Como Votar
 
-Perfil de cada deputado federal (legislatura 2023–2026): propostas, votos nominais, gastos da cota parlamentar
+Perfil de cada deputado federal e senador (legislatura 2023–2026): propostas, votos nominais, gastos da cota parlamentar
 comparados à média (nacional e do estado) e presença. Usa só dados abertos da Câmara.
 
 ## Rodar
@@ -42,3 +42,23 @@ orientou Sim/Não; com todas as votações o eixo vira governo × oposição (o 
 com o alinhamento ao Governo e com a pesquisa acadêmica). Sinal fixado com PSOL à esquerda de PL; escala 0–10 relativa
 (percentis 2 e 98) com os mesmos cortes de faixa do artigo. Saída: `web/data/ideologia_voto.json` + campos
 `voto_nota`/`voto_faixa` em `deputados.json`.
+
+## Senado
+
+O site tem duas casas (`#/` = Câmara, `#/senado` = Senado); os dados do Senado ficam em `web/data/senado/`.
+
+```bash
+python3 fetch_senado.py     # baixa votações, orientações, autorias, processos e CEAPS para data_raw/senado/ (REFRESH=1 força)
+python3 build_senado.py     # gera web/data/senado/ no mesmo formato da Câmara (usa funções de build_data.py)
+```
+
+- Fontes: [dados abertos do Senado](https://legis.senado.leg.br/dadosabertos) (`/votacao`, `/plenario/votacao/orientacaoBancada`,
+  `/senador/...`, `/processo`) e a CEAPS (`adm.senado.gov.br`). Candidaturas: mesmo arquivo do TSE usado para a Câmara.
+- **Voto individual só existe nas votações nominais abertas** (183 de 423 na legislatura); as secretas só registram presença.
+- **Presença** é medida nas votações nominais (abertas e secretas) e separa ausência justificada (atividade parlamentar,
+  missão, licença) de não comparecimento.
+- **Não há "posição ideológica pelo voto" no Senado**: com as poucas votações abertas em que o Governo não orientou, a escala
+  reproduz o alinhamento ao Governo (correlação 0,94) mais que a pesquisa acadêmica (0,62). Ver `meta.json -> diagnostico`.
+- Tema das votações = nível mais alto da classificação do processo legislativo.
+- `fetch_senado.py` usa endpoints que o Senado marcou como descontinuados (`/senador/{id}/autorias`); se pararem de
+  responder, o substituto é `/processo?codigoParlamentarAutor=`.

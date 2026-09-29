@@ -215,3 +215,10 @@ th.r .sortb { text-align: right; }
 .cargotab.on .n { background: var(--brand-yellow); color: #0f1b33; }
 .cargotab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .buscando .cargotabs { opacity: .4; }
+
+/* seletor de casa legislativa (cabeçalho) */
+.casas { display: flex; gap: 6px; flex-wrap: wrap; }
+.casas a { color: #fff; text-decoration: none; font-size: .9rem; padding: 6px 13px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .55); }
+.casas a:hover { background: rgba(255, 255, 255, .16); }
+.casas a.on { background: #fff; color: var(--hdr-bg); font-weight: 700; border-color: #fff; }
+.casas a:focus-visible { outline: 2px solid var(--brand-yellow); outline-offset: 2px; }

@@ -26,7 +26,7 @@ OUT = os.path.join(ROOT, "web", "data")
 YEARS = [2023, 2024, 2025, 2026]  # legislatura 57
 
 # Tipos de proposição considerados "propostas legislativas" (o resto é requerimento, indicação etc.)
-TIPOS_PRINCIPAIS = {"PL", "PLP", "PEC", "PDL", "PRC", "PLV", "PFC", "PLN", "PLC", "PLS"}
+TIPOS_PRINCIPAIS = {"PL", "PLP", "PEC", "PDL", "PRC", "PLV", "PFC", "PLN", "PLC", "PLS", "PRS"}
 MIN_MESES_MEDIA = 6  # só entra nas médias quem exerceu o mandato por pelo menos isso
 VOTO_COD = {"Sim": "S", "Não": "N", "Abstenção": "A", "Obstrução": "O"}
 
@@ -145,8 +145,12 @@ def _iso(d):  # "dd/mm/aaaa" -> "aaaa-mm-dd"
     return f"{p[2]}-{p[1]}-{p[0]}" if len(p) == 3 else ""
 
 
-def candidaturas(deps):
-    """Cruza os deputados com o registro de candidaturas de 2026 do TSE.
+def candidaturas(deps, civil=None, cargo_proprio="DEPUTADO FEDERAL"):
+    """Cruza os parlamentares (deps) com o registro de candidaturas de 2026 do TSE.
+
+    civil: {id: (nome civil normalizado, data de nascimento AAAA-MM-DD)}; se omitido, usa o arquivo de deputados.
+    cargo_proprio: cargo do próprio mandato (candidatura a ele = reeleição).
+
 
     O arquivo do TSE é um retrato que mantém registros já substituídos (a coluna de situação vem em branco),
     então:
@@ -173,9 +177,10 @@ def candidaturas(deps):
         return [y for y in por_numero[(x["SG_UF"], x["DS_CARGO"], x["NR_CANDIDATO"])]
                 if y["DT_NASCIMENTO"] != x["DT_NASCIMENTO"] and y["_sq"] > x["_sq"]]
 
-    civil = {}
-    for r in rd("deputados-csv.csv"):
-        civil[int(r["uri"].rsplit("/", 1)[1])] = (_norm(r["nomeCivil"]), r["dataNascimento"])
+    if civil is None:
+        civil = {}
+        for r in rd("deputados-csv.csv"):
+            civil[int(r["uri"].rsplit("/", 1)[1])] = (_norm(r["nomeCivil"]), r["dataNascimento"])
     out, substituidos = {}, {}
     for dep, info in deps.items():
         nome, nasc = civil.get(dep, ("", ""))
@@ -203,7 +208,7 @@ def candidaturas(deps):
                   for r in vivos[:-1] if chave(r) != chave(x)]
         out[dep] = {"cargo": x["DS_CARGO"].title(), "uf": x["SG_UF"], "partido": x["SG_PARTIDO"],
                     "numero": x["NR_CANDIDATO"], "nome_urna": x["NM_URNA_CANDIDATO"].title(),
-                    "reeleicao": x["DS_CARGO"] == "DEPUTADO FEDERAL", "cruzamento": modo,
+                    "reeleicao": x["DS_CARGO"] == cargo_proprio, "cruzamento": modo,
                     "outros_registros": outros,
                     "substituidos": [{"cargo": r["DS_CARGO"].title(), "numero": r["NR_CANDIDATO"]} for r in recs if cedido_a(r)]}
     return out, substituidos, gerado
