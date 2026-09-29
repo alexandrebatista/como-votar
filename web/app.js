@@ -50,8 +50,8 @@ async function viewList() {
   const SEM = '-'; // "sem classificação"
 
   // ----- visualização em tabela -----
-  // Padrões ao abrir (visita nova): tabela, classificação pelo partido, ordem alfabética
-  const VISAO_PADRAO = 'tabela', FONTE_PADRAO = 'pesquisa';
+  // Padrões ao abrir (visita nova): tabela, classificação ideológica pelo voto, ordem alfabética
+  const VISAO_PADRAO = 'tabela', FONTE_PADRAO = 'voto';
   let visao = listState.visao || VISAO_PADRAO; // 'cartoes' | 'tabela'
   const ord = listState.ord || { k: 'nome', dir: 1 };
   const nfl = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
