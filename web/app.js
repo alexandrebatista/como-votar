@@ -57,7 +57,10 @@ async function viewList() {
   const nfl = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
   const pctF = v => (v == null ? '—' : nfl(v) + '%');
   const mediaNac = meta.nacional.gasto_mensal.media;
-  const CAND_TXT = d => (d.cand === 'reeleicao' ? `Reeleição · nº ${d.cand_numero}` : d.cand === 'outro' ? `Candidato a ${d.cand_cargo}` : 'Sem candidatura');
+  const CAND_TXT = d => {
+    const base = d.cand === 'reeleicao' ? `Reeleição · nº ${d.cand_numero}` : d.cand === 'outro' ? `Candidato a ${d.cand_cargo}` : d.cand_obs === 'substituido' ? 'Registro substituído no TSE' : 'Sem candidatura';
+    return d.cand_obs === 'multiplos' ? `${base} (mais de um registro)` : base;
+  };
   const CAND_ORD = { reeleicao: 0, outro: 1, nao: 2 };
   // v = valor para ordenar; h = HTML da célula; c = texto para o CSV; num = alinhar à direita
   const COLS = [
@@ -222,8 +225,10 @@ async function viewList() {
     if (tabela) { grid.innerHTML = tabelaHtml(list); return; }
     grid.innerHTML = list.slice(0, 120).map(d => `
       <a class="dep" href="#/d/${d.id}"><img loading="lazy" src="${esc(d.foto)}" alt=""><div><b>${esc(d.nome)}</b><span>${esc(d.partido)} · ${esc(d.uf)}${faixaOf(d) !== SEM ? ' · ' + esc(faixaNome[faixaOf(d)]) : ''}${d.em_exercicio ? '' : ' · fora de exercício'}</span>${
-        d.cand === 'reeleicao' ? `<span class="candtag">Candidato · nº ${esc(d.cand_numero)}</span>`
-        : d.cand === 'outro' ? `<span class="candtag other">Candidato a ${esc(d.cand_cargo)}</span>` : ''}</div></a>`).join('');
+        (d.cand === 'reeleicao' ? `<span class="candtag">Candidato · nº ${esc(d.cand_numero)}</span>`
+        : d.cand === 'outro' ? `<span class="candtag other">Candidato a ${esc(d.cand_cargo)}</span>`
+        : d.cand_obs === 'substituido' ? '<span class="candtag other">Registro substituído no TSE</span>' : '')
+        + (d.cand_obs === 'multiplos' ? '<span class="candtag other">Mais de um registro no TSE</span>' : '')}</div></a>`).join('');
   };
   app.querySelector('.filters').parentElement.addEventListener('click', e => {
     const vb = e.target.closest('.viewb');
@@ -270,6 +275,16 @@ async function viewDep(id) {
       ? `<span class="pill cand" title="Registro de candidaturas do TSE, 2026">Candidato a deputado federal · nº ${esc(cd.numero)} (${esc(cd.partido)}-${esc(cd.uf)}) · urna: ${esc(cd.nome_urna)}</span>`
       : `<span class="pill cand other" title="Registro de candidaturas do TSE, 2026">Candidato a ${esc(cd.cargo)} (${esc(cd.partido)}-${esc(cd.uf)}) · nº ${esc(cd.numero)}</span>`)
     : `<span class="pill" title="Não encontramos este deputado entre as candidaturas registradas no TSE em 2026">sem candidatura registrada em 2026</span>`;
+  // avisos quando o arquivo do TSE não permite afirmar qual registro vale
+  const regTxt = r => `${esc(r.cargo)} nº ${esc(r.numero)}`;
+  let candNota = '';
+  if (cd && cd.outros_registros?.length) {
+    candNota = `<div class="notice">Constam <b>outros registros</b> deste candidato no TSE: ${cd.outros_registros.map(regTxt).join('; ')}. O arquivo aberto do TSE não informa qual está em vigor; mostramos o mais recente (${regTxt(cd)}). Confira na <a href="https://divulgacandcontas.tse.jus.br/" target="_blank" rel="noopener">consulta oficial do TSE</a>.</div>`;
+  } else if (!cd && dep.candidatura_substituida?.length) {
+    candNota = `<div class="notice">O registro deste deputado (${dep.candidatura_substituida.map(regTxt).join('; ')}) aparece no TSE com o número <b>assumido depois por outro candidato</b> (${[...new Set(dep.candidatura_substituida.flatMap(r => r.cedido_a))].map(esc).join(', ')}), o que indica substituição. Não encontramos outra candidatura dele. Confira na <a href="https://divulgacandcontas.tse.jus.br/" target="_blank" rel="noopener">consulta oficial do TSE</a>.</div>`;
+  } else if (cd && cd.substituidos?.length) {
+    candNota = `<div class="notice">Um registro anterior deste candidato (${cd.substituidos.map(regTxt).join('; ')}) teve o número assumido por outra pessoa e foi desconsiderado; vale o registro acima.</div>`;
+  }
 
   app.innerHTML = `
     <a class="back" href="#/">← Todos os deputados</a>
@@ -278,6 +293,7 @@ async function viewDep(id) {
       <div>
         <h1>${esc(dep.nome)}</h1>
         <div style="margin:4px 0">${candPill}</div>
+        ${candNota}
         <div class="muted">${esc(dep.partido)} · ${esc(dep.uf)} ${ideo} ${dep.em_exercicio ? '' : '<span class="pill">fora de exercício hoje</span>'} · dados de ${fdate(dep.inicio)} a ${fdate(dep.fim)} · <a href="${camaraDep(dep.id)}" target="_blank" rel="noopener">perfil na Câmara ↗</a></div>
         <div class="sharewrap">
           <button type="button" id="share" class="tool share" aria-haspopup="menu" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg> Compartilhar</button>
@@ -642,7 +658,7 @@ async function methodology() {
     <li><b>Médias:</b> só entram deputados com pelo menos ${meta.min_meses_media} meses de mandato (${meta.nacional.n} deputados), tanto na média nacional quanto na do estado.</li>
     <li><b>Presença:</b> registros de presença nas sessões deliberativas do Plenário. A Câmara considera justificativas e missões oficiais, que não estão nos dados abertos; por isso o número pode ser menor que o "oficial".</li>
     <li><b>Orientação ideológica pelo voto:</b> em vez da imagem do partido, mede-se o comportamento. Cada deputado com pelo menos ${idvMin} votos Sim/Não é posicionado num eixo único pelas votações nominais do Plenário (modelo de posto 1 sobre a matriz deputados × votações, ajustado por mínimos quadrados alternados; deputados que votam igual ficam próximos). Só entram votações <b>contestadas</b> (a minoria tem ao menos 10% dos votos) e em que o <b>Governo não orientou Sim/Não</b> (${int.format(idvDiag.votacoes_B)} votações). Motivo: com todas as votações (${int.format(idvDiag.votacoes_A)}) o eixo encontrado é governo × oposição, com correlação de ${idvDiag.A.corr_governo.toLocaleString('pt-BR')} com o alinhamento ao Governo e só ${idvDiag.A.corr_pesquisa.toLocaleString('pt-BR')} com a pesquisa acadêmica; excluindo as votações em que o Governo orientou, a correlação com a pesquisa sobe para ${idvDiag.B.corr_pesquisa.toLocaleString('pt-BR')}. O sinal do eixo é fixado colocando o PSOL à esquerda do PL (única âncora externa). A escala é reescalada de 0 a 10 (2º e 98º percentis dos deputados = 0 e 10) e as faixas usam os mesmos cortes do artigo, mas a escala é <b>relativa a esta Câmara e a esta legislatura</b>: "direita" pelo voto significa "vota mais como a direita desta Câmara", não uma medida absoluta. O eixo capta comportamento em votações, que também reflete alianças, emendas e negociação, e não só convicção. A nota do partido pelo voto é a mediana de seus deputados; a faixa mostra a dispersão (metade central). Deputados com poucos votos nessas votações ficam sem posição.</li>
-    <li><b>Candidatura em 2026:</b> vem do registro de candidaturas do TSE (dados de ${fdate(meta.candidaturas_tse_em.split('/').reverse().join('-'))}). Cruzamos com os deputados pelo nome civil e data de nascimento; quando a grafia difere, aceitamos a mesma data de nascimento no mesmo estado com nome parecido ou igual ao nome parlamentar. "Reeleição" aqui significa: exerceu o mandato de deputado federal nesta legislatura (inclusive suplentes) e registrou candidatura a deputado federal. O arquivo do TSE não informa se o registro já foi deferido ou impugnado. "Sem candidatura" quer dizer que não encontramos o nome no registro, o que pode ser mesmo ausência de candidatura ou uma divergência de cadastro.</li>
+    <li><b>Candidatura em 2026:</b> vem do registro de candidaturas do TSE (dados de ${fdate(meta.candidaturas_tse_em.split('/').reverse().join('-'))}). Cruzamos com os deputados pelo nome civil e data de nascimento; quando a grafia difere, aceitamos a mesma data de nascimento no mesmo estado com nome parecido ou igual ao nome parlamentar. "Reeleição" aqui significa: exerceu o mandato de deputado federal nesta legislatura (inclusive suplentes) e registrou candidatura a deputado federal. O arquivo do TSE não informa se o registro já foi deferido ou impugnado e mantém registros já substituídos; por isso, quando outra pessoa registrou depois o mesmo número de urna (mesmo estado e cargo), tratamos o registro anterior como substituído e o descartamos, e quando restam registros para cargos diferentes usamos o mais recente e avisamos no perfil. "Sem candidatura" quer dizer que não encontramos o nome no registro, o que pode ser mesmo ausência de candidatura ou uma divergência de cadastro.</li>
     <li>Nada aqui é nota ou recomendação de voto.</li>
   </ul>`;
 }

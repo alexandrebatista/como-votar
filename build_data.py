@@ -147,35 +147,66 @@ def _iso(d):  # "dd/mm/aaaa" -> "aaaa-mm-dd"
 
 def candidaturas(deps):
     """Cruza os deputados com o registro de candidaturas de 2026 do TSE.
-    1) nome civil + data de nascimento (exato); 2) mesma data de nascimento + mesma UF e nome parecido
-    (similaridade >= 0.75) ou igual ao nome parlamentar. Devolve {id: {...}} só de quem tem candidatura."""
+
+    O arquivo do TSE é um retrato que mantém registros já substituídos (a coluna de situação vem em branco),
+    então:
+    1) reúne TODOS os registros da mesma pessoa: nome civil + data de nascimento (exato) e, na mesma data de
+       nascimento e UF, registros com nome parecido (similaridade >= 0.75), igual ao nome parlamentar ou com o
+       mesmo nome de urna (cobre grafias diferentes do nome civil);
+    2) descarta o registro cujo número de urna (mesma UF e cargo) foi assumido depois (SQ_CANDIDATO maior) por
+       outra pessoa: é uma substituição;
+    3) se sobrar mais de um registro para cargos/números diferentes, usa o mais recente e sinaliza os demais.
+    Devolve ({id: candidatura}, {id: registros substituídos}, data de geração do arquivo)."""
     with open(os.path.join(RAW, "consulta_cand_2026_BRASIL.csv"), encoding="latin-1", newline="") as f:
         linhas = list(csv.DictReader(f, delimiter=";"))
     gerado = linhas[0]["DT_GERACAO"] if linhas else ""
-    por_chave, por_data = defaultdict(list), defaultdict(list)
+    por_chave, por_data, por_numero = defaultdict(list), defaultdict(list), defaultdict(list)
     for x in linhas:
         x["_nome"] = _norm(x["NM_CANDIDATO"])
+        x["_urna"] = _norm(x["NM_URNA_CANDIDATO"])
+        x["_sq"] = int(x["SQ_CANDIDATO"])
         por_chave[(x["_nome"], _iso(x["DT_NASCIMENTO"]))].append(x)
         por_data[_iso(x["DT_NASCIMENTO"])].append(x)
+        por_numero[(x["SG_UF"], x["DS_CARGO"], x["NR_CANDIDATO"])].append(x)
+
+    def cedido_a(x):  # outras pessoas que registraram depois o mesmo número (UF + cargo)
+        return [y for y in por_numero[(x["SG_UF"], x["DS_CARGO"], x["NR_CANDIDATO"])]
+                if y["DT_NASCIMENTO"] != x["DT_NASCIMENTO"] and y["_sq"] > x["_sq"]]
+
     civil = {}
     for r in rd("deputados-csv.csv"):
         civil[int(r["uri"].rsplit("/", 1)[1])] = (_norm(r["nomeCivil"]), r["dataNascimento"])
-    out = {}
+    out, substituidos = {}, {}
     for dep, info in deps.items():
         nome, nasc = civil.get(dep, ("", ""))
-        cands, modo = por_chave.get((nome, nasc)), "exato"
-        if not cands and nasc:
-            modo = "aproximado"
-            cands = [x for x in por_data.get(nasc, []) if x["SG_UF"] == info["uf"] and (
+        recs, modo = list(por_chave.get((nome, nasc), [])), "exato"
+        if nasc:
+            urnas = {x["_urna"] for x in recs} | {_norm(info["nome"])}
+            vistos = {x["_sq"] for x in recs}
+            extra = [x for x in por_data.get(nasc, []) if x["_sq"] not in vistos and x["SG_UF"] == info["uf"] and (
                 difflib.SequenceMatcher(None, nome, x["_nome"]).ratio() >= 0.75
-                or _norm(info["nome"]) in (x["_nome"], _norm(x["NM_URNA_CANDIDATO"])))]
-            cands = cands if len(cands) == 1 else None
-        if cands and len(cands) == 1:
-            x = cands[0]
-            out[dep] = {"cargo": x["DS_CARGO"].title(), "uf": x["SG_UF"], "partido": x["SG_PARTIDO"],
-                        "numero": x["NR_CANDIDATO"], "nome_urna": x["NM_URNA_CANDIDATO"].title(),
-                        "reeleicao": x["DS_CARGO"] == "DEPUTADO FEDERAL", "cruzamento": modo}
-    return out, gerado
+                or x["_urna"] in urnas or _norm(info["nome"]) == x["_nome"])]
+            if extra and not recs:
+                modo = "aproximado"
+            recs += extra
+        if not recs:
+            continue
+        vivos = [x for x in recs if not cedido_a(x)]
+        if not vivos:  # todos os registros tiveram o número assumido por outra pessoa
+            substituidos[dep] = [{"cargo": x["DS_CARGO"].title(), "numero": x["NR_CANDIDATO"], "uf": x["SG_UF"],
+                                  "cedido_a": sorted({y["NM_URNA_CANDIDATO"].title() for y in cedido_a(x)})} for x in recs]
+            continue
+        vivos.sort(key=lambda x: x["_sq"])
+        x = vivos[-1]
+        chave = lambda r: (r["DS_CARGO"], r["NR_CANDIDATO"], r["SG_UF"])
+        outros = [{"cargo": r["DS_CARGO"].title(), "numero": r["NR_CANDIDATO"], "uf": r["SG_UF"]}
+                  for r in vivos[:-1] if chave(r) != chave(x)]
+        out[dep] = {"cargo": x["DS_CARGO"].title(), "uf": x["SG_UF"], "partido": x["SG_PARTIDO"],
+                    "numero": x["NR_CANDIDATO"], "nome_urna": x["NM_URNA_CANDIDATO"].title(),
+                    "reeleicao": x["DS_CARGO"] == "DEPUTADO FEDERAL", "cruzamento": modo,
+                    "outros_registros": outros,
+                    "substituidos": [{"cargo": r["DS_CARGO"].title(), "numero": r["NR_CANDIDATO"]} for r in recs if cedido_a(r)]}
+    return out, substituidos, gerado
 
 
 def main():
@@ -195,8 +226,9 @@ def main():
         em_exercicio = {d["id"] for d in json.load(f)["dados"]}  # quem ocupa cadeira hoje (513)
     for i, d in deps.items():
         d["em_exercicio"] = i in em_exercicio
-    cands, cand_gerado = candidaturas(deps)
-    print(f"{len(cands)} deputados com candidatura em 2026 ({sum(c['reeleicao'] for c in cands.values())} à reeleição)")
+    cands, cand_subst, cand_gerado = candidaturas(deps)
+    print(f"{len(cands)} deputados com candidatura em 2026 ({sum(c['reeleicao'] for c in cands.values())} à reeleição); "
+          f"{len(cand_subst)} só com registro substituído; {sum(1 for c in cands.values() if c['outros_registros'])} com mais de um registro")
 
     # ---------- sessões deliberativas do Plenário ----------
     sessoes = {}  # idEvento -> data
@@ -513,6 +545,9 @@ def main():
             "cand": ("reeleicao" if cands[dep]["reeleicao"] else "outro") if dep in cands else "nao",
             "cand_numero": cands[dep]["numero"] if dep in cands and cands[dep]["reeleicao"] else None,
             "cand_cargo": cands[dep]["cargo"] if dep in cands else None,
+            # observação sobre o registro: 'substituido' (só há registro cujo número foi assumido por outra pessoa)
+            # ou 'multiplos' (mais de um registro em vigor; usamos o mais recente)
+            "cand_obs": "substituido" if dep in cand_subst else ("multiplos" if dep in cands and cands[dep]["outros_registros"] else None),
             "inicio": ini, "fim": fim, "meses": n_meses,
             "gasto_total": round(total, 2), "gasto_mensal": round(total / n_meses, 2),
             "sessoes": len(sess_periodo), "presencas": len(pres),
@@ -604,6 +639,7 @@ def main():
             "ideologia": ideologia.get(r["partido"]),
             "ideologia_voto": voto_ide.get(dep),
             "candidatura": cands.get(dep),
+            "candidatura_substituida": cand_subst.get(dep),
             "partido_voto": partidos_voto.get(r["partido"]),
             "propostas": {"contagem": dict(contagem.most_common()), "lista": lista},
             "votos": {"lista": vs, "total": len(vs), "com_maioria": com_maioria, "seguiu_partido": seguiu, "alinhamento": alinhamento},
