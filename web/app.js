@@ -50,8 +50,9 @@ async function viewList() {
   const SEM = '-'; // "sem classificação"
 
   // ----- visualização em tabela -----
-  let visao = listState.visao || 'cartoes'; // 'cartoes' | 'tabela'
-  if (!listState.visao) { try { visao = localStorage.getItem('visao') === 'tabela' ? 'tabela' : 'cartoes'; } catch { /* sem armazenamento */ } }
+  // Padrões ao abrir (visita nova): tabela, classificação pelo partido, ordem alfabética
+  const VISAO_PADRAO = 'tabela', FONTE_PADRAO = 'pesquisa';
+  let visao = listState.visao || VISAO_PADRAO; // 'cartoes' | 'tabela'
   const ord = listState.ord || { k: 'nome', dir: 1 };
   const nfl = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
   const pctF = v => (v == null ? '—' : nfl(v) + '%');
@@ -102,7 +103,7 @@ async function viewList() {
   };
   let listaAtual = [];
 
-  let fonte = listState.fonte || 'pesquisa'; // 'pesquisa' (nota do partido) | 'voto' (como o deputado vota)
+  let fonte = listState.fonte || FONTE_PADRAO; // 'pesquisa' (nota do partido) | 'voto' (como o deputado vota)
   const faixaOf = d => (fonte === 'voto' ? d.voto_faixa : d.faixa) || SEM;
   const notaPartido = p => (fonte === 'voto' ? idv.partidos[p]?.nota : ide.partidos[p]?.nota) ?? 99;
   let partyCount = {}, faixaCount = {}, partyFaixas = {};
@@ -135,7 +136,7 @@ async function viewList() {
       <input type="search" id="q" placeholder="Buscar por nome…" aria-label="Buscar por nome">
       <select id="uf" aria-label="Estado"><option value="">Todos os estados</option>${ufs.map(u => `<option>${u}</option>`).join('')}</select>
       <label class="check"><input type="checkbox" id="ativos" checked> só deputados em exercício</label>
-      <button type="button" id="clear" hidden>Restaurar filtros padrão</button>
+      <button type="button" id="clear" hidden>Restaurar padrão</button>
     </div>
     <div class="chipgroup" role="group" aria-labelledby="lbl-cand">
       <div class="glabel" id="lbl-cand">Candidatura em 2026 <span class="muted small">(registro do TSE; escolha uma ou mais)</span></div>
@@ -191,7 +192,7 @@ async function viewList() {
     document.querySelectorAll('.segb').forEach(b => { const on = b.dataset.fonte === fonte; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     document.getElementById('pt-chips').innerHTML = sortedParties().map(p => chip('pt', p, p, partyCount[p], { on: selPt.has(p), off: !disponivel(p) })).join('');
     document.getElementById('pt-note').hidden = !selIde.size;
-    clear.hidden = !(selIde.size || selPt.size || !candPadrao() || q.value || uf.value || !ativos.checked);
+    clear.hidden = !(selIde.size || selPt.size || !candPadrao() || fonte !== FONTE_PADRAO || visao !== VISAO_PADRAO || ord.k !== 'nome' || ord.dir !== 1 || q.value || uf.value || !ativos.checked);
   };
   const render = () => {
     // contagens e partidos disponíveis refletem também o filtro de candidatura
@@ -226,7 +227,7 @@ async function viewList() {
   };
   app.querySelector('.filters').parentElement.addEventListener('click', e => {
     const vb = e.target.closest('.viewb');
-    if (vb) { visao = vb.dataset.visao; try { localStorage.setItem('visao', visao); } catch { /* ok */ } render(); return; }
+    if (vb) { visao = vb.dataset.visao; render(); return; }
     const so = e.target.closest('.sortb');
     if (so) { const k = so.dataset.sort; ord.dir = ord.k === k ? -ord.dir : (COLS.find(c => c.k === k).num ? -1 : 1); ord.k = k; render(); document.querySelector(`.sortb[data-sort="${k}"]`)?.focus(); return; }
     if (e.target.closest('#csv')) { baixarCsv(listaAtual); return; }
@@ -238,7 +239,7 @@ async function viewList() {
     render();
     document.querySelector(`.fchip[data-kind="${b.dataset.kind}"][data-id="${CSS.escape(b.dataset.id)}"]`)?.focus();
   });
-  clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); selCand.clear(); CAND_PADRAO.forEach(c => selCand.add(c)); q.value = ''; uf.value = ''; ativos.checked = true; render(); });
+  clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); selCand.clear(); CAND_PADRAO.forEach(c => selCand.add(c)); q.value = ''; uf.value = ''; ativos.checked = true; fonte = FONTE_PADRAO; visao = VISAO_PADRAO; ord.k = 'nome'; ord.dir = 1; render(); });
   [q, uf, ativos].forEach(el => el.addEventListener('input', render));
   render();
   if (!listState.visitou) { q.focus({ preventScroll: true }); listState.visitou = true; saveState(); }
