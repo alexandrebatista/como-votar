@@ -56,33 +56,11 @@ function compare(value, ref, refLabel, { unit = 'pct' } = {}) {
 const stat = (n, l, extra = '') => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div>${extra}</div>`;
 
 /* ---------- lista ---------- */
-// Abas por cargo da candidatura em 2026 (vice ficam na aba do cargo principal; suplentes de senador têm aba própria)
-const CARGO_ABAS = {
-  federal: ['Deputado federal', 'Candidatos a deputado federal'],
-  senador: ['Senador', 'Candidatos a senador (sem suplentes)'],
-  governador: ['Governador', 'Candidatos a governador, incluindo vice'],
-  estadual: ['Deputado estadual', 'Candidatos a deputado estadual ou distrital'],
-  presidente: ['Presidente', 'Candidatos a presidente, incluindo vice'],
-  suplente: ['Suplente de senador', 'Candidatos a primeiro ou segundo suplente de senador'],
-};
-// Só há abas para os cargos que o site mapeia (deputado federal e senador). Quem disputa outros cargos, ou não
-// consta do registro do TSE, só aparece pela busca por nome (que ignora os filtros).
-const cargosDaCasa = () => {
-  const proprio = casa.cargoProprio;
-  const ordem = proprio === 'federal' ? ['federal', 'senador'] : ['senador', 'federal'];
-  return ordem.map(k => [k, k === proprio ? `${CARGO_ABAS[k][0]} (reeleição)` : CARGO_ABAS[k][0], CARGO_ABAS[k][1]]);
-};
-const cargoDe = d => {
-  if (d.cand === 'nao') return 'nao';
-  const c = (d.cand_cargo || '').toLowerCase();
-  if (c === 'deputado federal') return 'federal';
-  if (c.includes('suplente')) return 'suplente';
-  if (c.includes('senador')) return 'senador';
-  if (c.includes('governador')) return 'governador';
-  if (c.includes('estadual') || c.includes('distrital')) return 'estadual';
-  if (c.includes('presidente')) return 'presidente';
-  return 'nao';
-};
+// Abas da lista: só há dois cargos mapeados (deputado federal e senador); cada aba abre a lista daquele cargo.
+const ABAS = [
+  { id: 'camara', nome: 'Deputado federal', hash: '#/' },
+  { id: 'senado', nome: 'Senador', hash: '#/senado' },
+];
 // Estado da lista: sobrevive a abrir um perfil e voltar (memória) e a recarregar a página (sessionStorage).
 const LISTA_KEY = 'como-votar:lista:v2';
 const allState = (() => { try { return JSON.parse(sessionStorage.getItem(LISTA_KEY)) || {}; } catch { return {}; } })();
@@ -91,7 +69,6 @@ const saveState = () => { try { sessionStorage.setItem(LISTA_KEY, JSON.stringify
 
 async function viewList() {
   listState = (allState[casa.id] ||= {});
-  const CARGOS = cargosDaCasa(), CARGO_PADRAO = casa.cargoProprio;
   document.title = casa.docTitulo;
   const ide = await load('data/ideologia.json');
   const faixaNome = Object.fromEntries(ide.faixas.map(f => [f.id, f.nome]));
@@ -119,7 +96,7 @@ async function viewList() {
     { k: 'nome', t: casa.Papel, v: d => d.nome, h: d => `<a href="#/${casa.rota}/${d.id}">${esc(d.nome)}</a>${d.em_exercicio ? '' : ' <span class="muted small">(fora de exercício)</span>'}`, c: d => d.nome },
     { k: 'partido', t: 'Partido', v: d => d.partido, h: d => esc(d.partido), c: d => d.partido },
     { k: 'uf', t: 'UF', v: d => d.uf, h: d => esc(d.uf), c: d => d.uf },
-    { k: 'cand', t: 'Candidatura em 2026', v: d => CARGOS.findIndex(c => c[0] === cargoDe(d)), h: d => esc(CAND_TXT(d)), c: d => CAND_TXT(d) },
+    { k: 'cand', t: 'Candidatura em 2026', v: d => ({ reeleicao: 0, outro: 1, nao: 2 })[d.cand], h: d => esc(CAND_TXT(d)), c: d => CAND_TXT(d) },
     { k: 'pesq', t: 'Ideologia (pesquisa)', num: 1, v: d => d.nota_pesquisa, h: d => (d.nota_pesquisa == null ? '—' : `${esc(faixaNome[d.faixa])} · ${nfl(d.nota_pesquisa)}`), c: d => (d.nota_pesquisa == null ? '' : `${faixaNome[d.faixa]} (${nfl(d.nota_pesquisa)})`) },
     { k: 'voto', t: 'Ideologia (pelo voto)', num: 1, v: d => d.voto_nota, h: d => (d.voto_nota == null ? '—' : `${esc(faixaNome[d.voto_faixa])} · ${nfl(d.voto_nota)}`), c: d => (d.voto_nota == null ? '' : `${faixaNome[d.voto_faixa]} (${nfl(d.voto_nota)})`) },
     { k: 'pres', t: casa.id === 'senado' ? 'Presença em votações nominais' : 'Presença em sessões', num: 1, v: d => d.pct_presenca, h: d => pctF(d.pct_presenca), c: d => d.pct_presenca ?? '' },
@@ -175,17 +152,19 @@ async function viewList() {
   const sortedParties = () => [...allParties].sort((x, y) => notaPartido(x) - notaPartido(y) || x.localeCompare(y, 'pt-BR'));
   const faixas = [...ide.faixas.map(f => ({ id: f.id, nome: f.nome })), { id: SEM, nome: 'Sem classificação' }];
   const selIde = new Set(listState.ide || []), selPt = new Set(listState.pt || []);
-  let cargo = CARGOS.some(c => c[0] === listState.cargo) ? listState.cargo : CARGO_PADRAO; // aba da lista
-  let cargoCount = {};
+  // contagens das abas: precisam das duas listas (a outra casa é pequena e fica em cache)
+  const listas = {};
+  for (const c of Object.values(CASAS)) listas[c.id] = c.id === casa.id ? deps : await load(c.base + c.lista);
 
   app.innerHTML = `
     <h1>${casa.titulo}</h1>
     <p class="muted">${casa.intro}</p>
-    <div class="cargotabs" role="tablist" aria-label="Cargo a que o ${casa.papel} concorre em 2026 (registro do TSE)" id="cargotabs"></div>
+    <div class="cargotabs" role="tablist" aria-label="Cargo" id="cargotabs"></div>
     <div class="filters">
       <input type="search" id="q" placeholder="Buscar por nome…" aria-label="Buscar por nome">
       <select id="uf" aria-label="Estado"><option value="">Todos os estados</option>${ufs.map(u => `<option>${u}</option>`).join('')}</select>
       <label class="check"><input type="checkbox" id="ativos" checked> só ${casa.plural} em exercício</label>
+      <label class="check" title="Candidatos ao mesmo cargo em 2026 (registro do TSE). Desmarque para ver também quem disputa outros cargos ou não consta no registro."><input type="checkbox" id="reel" checked> só quem concorre à reeleição</label>
       <button type="button" id="clear" hidden>Restaurar padrão</button>
     </div>
     <div class="chipgroup" role="radiogroup" aria-labelledby="lbl-fonte">
@@ -217,8 +196,8 @@ async function viewList() {
     </div>
     <div class="grid" id="grid"></div>`;
   const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const q = document.getElementById('q'), uf = document.getElementById('uf'), clear = document.getElementById('clear'), ativos = document.getElementById('ativos');
-  q.value = listState.q || ''; uf.value = listState.uf || ''; ativos.checked = listState.ativos !== false;
+  const q = document.getElementById('q'), uf = document.getElementById('uf'), clear = document.getElementById('clear'), ativos = document.getElementById('ativos'), reel = document.getElementById('reel');
+  q.value = listState.q || ''; uf.value = listState.uf || ''; ativos.checked = listState.ativos !== false; reel.checked = listState.reel !== false;
 
   // um partido está disponível se nenhuma orientação foi escolhida ou se algum deputado dele está em uma das escolhidas
   // (pela pesquisa todo o partido tem uma só faixa; pelo voto um partido pode ter deputados em várias)
@@ -233,19 +212,21 @@ async function viewList() {
     // escolher orientação invalida partidos que não pertencem a ela
     [...selPt].forEach(p => { if (!disponivel(p)) selPt.delete(p); });
     document.getElementById('ide-chips').innerHTML = faixas.map(f => chip('ide', f.id, f.nome, faixaCount[f.id], { on: selIde.has(f.id) })).join('');
-    document.getElementById('cargotabs').innerHTML = CARGOS.filter(([id]) => id !== 'suplente' || cargoCount.suplente || cargo === 'suplente').map(([id, nome, dica]) =>
-      `<button type="button" role="tab" class="cargotab${cargo === id ? ' on' : ''}" data-cargo="${id}" aria-selected="${cargo === id}" title="${esc(dica)}">${esc(nome)} <span class="n">${cargoCount[id] || 0}</span></button>`).join('');
+    document.getElementById('cargotabs').innerHTML = ABAS.map(a => {
+      const n = listas[a.id].filter(d => (!ativos.checked || d.em_exercicio) && (!reel.checked || d.cand === 'reeleicao')).length;
+      const on = a.id === casa.id;
+      return `<a role="tab" class="cargotab${on ? ' on' : ''}" href="${a.hash}" aria-selected="${on}">${a.nome} <span class="n">${n}</span></a>`;
+    }).join('');
     document.getElementById('fonte-nota').textContent = NOTA_FONTE[fonte];
     document.querySelectorAll('.segb').forEach(b => { const on = b.dataset.fonte === fonte; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     document.getElementById('pt-chips').innerHTML = sortedParties().map(p => chip('pt', p, p, partyCount[p], { on: selPt.has(p), off: !disponivel(p) })).join('');
     document.getElementById('pt-note').hidden = !selIde.size;
-    clear.hidden = !(selIde.size || selPt.size || cargo !== CARGO_PADRAO || fonte !== FONTE_PADRAO || visao !== VISAO_PADRAO || ord.k !== 'nome' || ord.dir !== 1 || q.value || uf.value || !ativos.checked);
+    clear.hidden = !(selIde.size || selPt.size || !reel.checked || fonte !== FONTE_PADRAO || visao !== VISAO_PADRAO || ord.k !== 'nome' || ord.dir !== 1 || q.value || uf.value || !ativos.checked);
   };
   const render = () => {
     // contagens e partidos disponíveis refletem também o filtro de candidatura
     const base = deps.filter(d => !ativos.checked || d.em_exercicio);
-    cargoCount = { todos: base.length }; base.forEach(d => { cargoCount[cargoDe(d)] = (cargoCount[cargoDe(d)] || 0) + 1; });
-    recount(cargo === 'todos' ? base : base.filter(d => cargoDe(d) === cargo));
+    recount(reel.checked ? base.filter(d => d.cand === 'reeleicao') : base);
     drawChips();
     const nq = norm(q.value.trim());
     // buscar por nome ignora todos os filtros (inclusive "em exercício" e candidatura): quem digita um nome quer aquela pessoa
@@ -253,10 +234,10 @@ async function viewList() {
     app.classList.toggle('buscando', buscando);
     const list = buscando
       ? deps.filter(d => norm(d.nome).includes(nq))
-      : deps.filter(d => (!ativos.checked || d.em_exercicio) && (cargo === 'todos' || cargoDe(d) === cargo) && (!uf.value || d.uf === uf.value)
+      : deps.filter(d => (!ativos.checked || d.em_exercicio) && (!reel.checked || d.cand === 'reeleicao') && (!uf.value || d.uf === uf.value)
         && (!selPt.size || selPt.has(d.partido)) && (!selIde.size || selIde.has(faixaOf(d))));
     listaAtual = list;
-    Object.assign(listState, { q: q.value, uf: uf.value, ativos: ativos.checked, ide: [...selIde], pt: [...selPt], cargo, fonte, visao, ord });
+    Object.assign(listState, { q: q.value, uf: uf.value, ativos: ativos.checked, ide: [...selIde], pt: [...selPt], reel: reel.checked, fonte, visao, ord });
     saveState();
     const tabela = visao === 'tabela';
     app.classList.toggle('wide', tabela);
@@ -275,8 +256,6 @@ async function viewList() {
         + (d.cand_obs === 'multiplos' ? '<span class="candtag other">Mais de um registro no TSE</span>' : '')}</div></a>`).join('');
   };
   app.querySelector('.filters').parentElement.addEventListener('click', e => {
-    const tb = e.target.closest('.cargotab');
-    if (tb) { cargo = tb.dataset.cargo; render(); document.querySelector(`.cargotab[data-cargo="${cargo}"]`)?.focus(); return; }
     const vb = e.target.closest('.viewb');
     if (vb) { visao = vb.dataset.visao; render(); return; }
     const so = e.target.closest('.sortb');
@@ -290,8 +269,8 @@ async function viewList() {
     render();
     document.querySelector(`.fchip[data-kind="${b.dataset.kind}"][data-id="${CSS.escape(b.dataset.id)}"]`)?.focus();
   });
-  clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); cargo = CARGO_PADRAO; q.value = ''; uf.value = ''; ativos.checked = true; fonte = FONTE_PADRAO; visao = VISAO_PADRAO; ord.k = 'nome'; ord.dir = 1; render(); });
-  [q, uf, ativos].forEach(el => el.addEventListener('input', render));
+  clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); reel.checked = true; q.value = ''; uf.value = ''; ativos.checked = true; fonte = FONTE_PADRAO; visao = VISAO_PADRAO; ord.k = 'nome'; ord.dir = 1; render(); });
+  [q, uf, ativos, reel].forEach(el => el.addEventListener('input', render));
   render();
   if (!listState.visitou) { q.focus({ preventScroll: true }); listState.visitou = true; saveState(); }
 }
@@ -704,7 +683,7 @@ async function methodology() {
   const idv = casa.temPeloVoto ? await load('data/ideologia_voto.json') : null;
   const idvMin = idv?.min_votos, idvDiag = idv?.diagnostico;
   const liIde = `<li><b>Orientação ideológica:</b> nota de 0 (esquerda) a 10 (direita) dada por mais de 500 cientistas políticos da ABCP, em <a href="${esc(ide.fonte.url)}" target="_blank" rel="noopener">${esc(ide.fonte.titulo)}</a> (${esc(ide.fonte.autores)}, ${esc(ide.fonte.publicacao)}). Faixas do próprio artigo: extrema-esquerda até 1,5; esquerda até 3; centro-esquerda até 4,49; centro de 4,5 a 5,5; centro-direita até 7; direita até 8,5; extrema-direita acima disso. Partidos renomeados usam a nota do nome anterior (Republicanos = PRB, PL = PR, Cidadania = PPS, Solidariedade = SDD); União e PRD (fusões recentes) usam a média dos partidos que os formaram, marcada como "estimada"; Missão não tem classificação. É uma <b>medida acadêmica da percepção sobre o partido</b>, não sobre cada deputado, e o partido pode ter mudado de posição desde a pesquisa. Para os "campos" ("esquerda", "centro", "direita") agrupamos as faixas: esquerda = extrema-esquerda + esquerda + centro-esquerda; direita = centro-direita + direita + extrema-direita. Por isso partidos do chamado centrão (MDB, PSD, PP, União…) caem em "direita". A maioria de cada campo em cada votação é calculada por nós a partir dos votos Sim/Não dos deputados do campo (só quando há ao menos 5 votos).</li>`;
-  const liCand = `<li><b>Candidatura em 2026:</b> vem do registro de candidaturas do TSE (dados de ${fdate(meta.candidaturas_tse_em.split('/').reverse().join('-'))}). Cruzamos com os ${casa.plural} pelo nome civil e data de nascimento; quando a grafia difere, aceitamos a mesma data de nascimento no mesmo estado com nome parecido ou igual ao nome parlamentar. "Reeleição" aqui significa: exerceu o mandato de ${casa.id === 'senado' ? 'senador' : 'deputado federal'} nesta legislatura (inclusive suplentes) e registrou candidatura ao mesmo cargo.${casa.id === 'senado' ? ' Os senadores têm mandato de 8 anos: em 2026 são renovadas 54 das 81 cadeiras (eleitos em 2018); quem foi eleito em 2022 não concorre ao Senado agora, mas pode disputar outros cargos.' : ''} O arquivo do TSE não informa se o registro já foi deferido ou impugnado e mantém registros já substituídos; por isso, quando outra pessoa registrou depois o mesmo número de urna (mesmo estado e cargo), tratamos o registro anterior como substituído e o descartamos, e quando restam registros para cargos diferentes usamos o mais recente e avisamos no perfil. "Sem candidatura" quer dizer que não encontramos o nome no registro, o que pode ser mesmo ausência de candidatura ou uma divergência de cadastro. A lista tem abas apenas para deputado federal e senador, os cargos que o site mapeia; quem disputa outros cargos (governador, presidente, deputado estadual, suplente) ou não consta do registro só é encontrado pela busca por nome, que ignora os filtros.</li>`;
+  const liCand = `<li><b>Candidatura em 2026:</b> vem do registro de candidaturas do TSE (dados de ${fdate(meta.candidaturas_tse_em.split('/').reverse().join('-'))}). Cruzamos com os ${casa.plural} pelo nome civil e data de nascimento; quando a grafia difere, aceitamos a mesma data de nascimento no mesmo estado com nome parecido ou igual ao nome parlamentar. "Reeleição" aqui significa: exerceu o mandato de ${casa.id === 'senado' ? 'senador' : 'deputado federal'} nesta legislatura (inclusive suplentes) e registrou candidatura ao mesmo cargo.${casa.id === 'senado' ? ' Os senadores têm mandato de 8 anos: em 2026 são renovadas 54 das 81 cadeiras (eleitos em 2018); quem foi eleito em 2022 não concorre ao Senado agora, mas pode disputar outros cargos.' : ''} O arquivo do TSE não informa se o registro já foi deferido ou impugnado e mantém registros já substituídos; por isso, quando outra pessoa registrou depois o mesmo número de urna (mesmo estado e cargo), tratamos o registro anterior como substituído e o descartamos, e quando restam registros para cargos diferentes usamos o mais recente e avisamos no perfil. "Sem candidatura" quer dizer que não encontramos o nome no registro, o que pode ser mesmo ausência de candidatura ou uma divergência de cadastro. A lista tem abas apenas para deputado federal e senador, os cargos que o site mapeia, e mostra por padrão só quem concorre à reeleição; desmarque "só quem concorre à reeleição" para ver todos, inclusive quem disputa outros cargos (governador, presidente, deputado estadual, suplente) ou não consta do registro.</li>`;
   if (casa.id === 'senado') {
     const dg = meta.diagnostico;
     document.getElementById('metodo-corpo').innerHTML = `
@@ -736,7 +715,7 @@ async function methodology() {
     <li><b>Médias:</b> só entram deputados com pelo menos ${meta.min_meses_media} meses de mandato (${meta.nacional.n} deputados), tanto na média nacional quanto na do estado.</li>
     <li><b>Presença:</b> registros de presença nas sessões deliberativas do Plenário. A Câmara considera justificativas e missões oficiais, que não estão nos dados abertos; por isso o número pode ser menor que o "oficial".</li>
     <li><b>Orientação ideológica pelo voto:</b> em vez da imagem do partido, mede-se o comportamento. Cada deputado com pelo menos ${idvMin} votos Sim/Não é posicionado num eixo único pelas votações nominais do Plenário (modelo de posto 1 sobre a matriz deputados × votações, ajustado por mínimos quadrados alternados; deputados que votam igual ficam próximos). Só entram votações <b>contestadas</b> (a minoria tem ao menos 10% dos votos) e em que o <b>Governo não orientou Sim/Não</b> (${int.format(idvDiag.votacoes_B)} votações). Motivo: com todas as votações (${int.format(idvDiag.votacoes_A)}) o eixo encontrado é governo × oposição, com correlação de ${idvDiag.A.corr_governo.toLocaleString('pt-BR')} com o alinhamento ao Governo e só ${idvDiag.A.corr_pesquisa.toLocaleString('pt-BR')} com a pesquisa acadêmica; excluindo as votações em que o Governo orientou, a correlação com a pesquisa sobe para ${idvDiag.B.corr_pesquisa.toLocaleString('pt-BR')}. O sinal do eixo é fixado colocando o PSOL à esquerda do PL (única âncora externa). A escala é reescalada de 0 a 10 (2º e 98º percentis dos deputados = 0 e 10) e as faixas usam os mesmos cortes do artigo, mas a escala é <b>relativa a esta Câmara e a esta legislatura</b>: "direita" pelo voto significa "vota mais como a direita desta Câmara", não uma medida absoluta. O eixo capta comportamento em votações, que também reflete alianças, emendas e negociação, e não só convicção. A nota do partido pelo voto é a mediana de seus deputados; a faixa mostra a dispersão (metade central). Deputados com poucos votos nessas votações ficam sem posição.</li>
-    <li><b>Candidatura em 2026:</b> vem do registro de candidaturas do TSE (dados de ${fdate(meta.candidaturas_tse_em.split('/').reverse().join('-'))}). Cruzamos com os deputados pelo nome civil e data de nascimento; quando a grafia difere, aceitamos a mesma data de nascimento no mesmo estado com nome parecido ou igual ao nome parlamentar. "Reeleição" aqui significa: exerceu o mandato de deputado federal nesta legislatura (inclusive suplentes) e registrou candidatura a deputado federal. O arquivo do TSE não informa se o registro já foi deferido ou impugnado e mantém registros já substituídos; por isso, quando outra pessoa registrou depois o mesmo número de urna (mesmo estado e cargo), tratamos o registro anterior como substituído e o descartamos, e quando restam registros para cargos diferentes usamos o mais recente e avisamos no perfil. "Sem candidatura" quer dizer que não encontramos o nome no registro, o que pode ser mesmo ausência de candidatura ou uma divergência de cadastro. A lista tem abas apenas para deputado federal e senador, os cargos que o site mapeia; quem disputa outros cargos (governador, presidente, deputado estadual, suplente) ou não consta do registro só é encontrado pela busca por nome, que ignora os filtros.</li>
+    <li><b>Candidatura em 2026:</b> vem do registro de candidaturas do TSE (dados de ${fdate(meta.candidaturas_tse_em.split('/').reverse().join('-'))}). Cruzamos com os deputados pelo nome civil e data de nascimento; quando a grafia difere, aceitamos a mesma data de nascimento no mesmo estado com nome parecido ou igual ao nome parlamentar. "Reeleição" aqui significa: exerceu o mandato de deputado federal nesta legislatura (inclusive suplentes) e registrou candidatura a deputado federal. O arquivo do TSE não informa se o registro já foi deferido ou impugnado e mantém registros já substituídos; por isso, quando outra pessoa registrou depois o mesmo número de urna (mesmo estado e cargo), tratamos o registro anterior como substituído e o descartamos, e quando restam registros para cargos diferentes usamos o mais recente e avisamos no perfil. "Sem candidatura" quer dizer que não encontramos o nome no registro, o que pode ser mesmo ausência de candidatura ou uma divergência de cadastro. A lista tem abas apenas para deputado federal e senador, os cargos que o site mapeia, e mostra por padrão só quem concorre à reeleição; desmarque "só quem concorre à reeleição" para ver todos, inclusive quem disputa outros cargos (governador, presidente, deputado estadual, suplente) ou não consta do registro.</li>
     <li>Nada aqui é nota ou recomendação de voto.</li>
   </ul>
   </ul>`;
@@ -746,13 +725,8 @@ async function methodology() {
 let viewAtual = null; // 'lista' | 'perfil'
 let casaLista = null; // casa da última lista exibida (para restaurar a rolagem ao voltar de um perfil)
 
-// Marca a casa ativa no cabeçalho e atualiza textos que dependem dela
+// Atualiza os textos do cabeçalho e da metodologia que dependem da casa
 function marcaCasa() {
-  document.querySelectorAll('.casas a').forEach(a => {
-    const on = a.dataset.casa === casa.id;
-    a.classList.toggle('on', on);
-    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-  });
   const tag = document.getElementById('tagcasa');
   if (tag) tag.textContent = `Legislatura 2023–2026 · dados abertos ${casa.id === 'senado' ? 'do Senado e do TSE' : 'da Câmara e do TSE'}`;
   methodology().catch(e => console.error('metodologia:', e));
