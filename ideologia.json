@@ -1,0 +1,44 @@
+{
+  "fonte": {
+    "titulo": "Uma Nova Classificação Ideológica dos Partidos Políticos Brasileiros",
+    "autores": "Bruno Bolognesi, Ednaldo Ribeiro e Adriano Codato",
+    "publicacao": "DADOS, vol. 66 (2), 2023 — survey UFPR/ABCP com mais de 500 cientistas políticos (0 = esquerda, 10 = direita)",
+    "url": "https://dados.iesp.uerj.br/en/artigos/?id=1252"
+  },
+  "faixas": [
+    {"id": "extrema-esquerda", "nome": "Extrema-esquerda", "min": 0,    "max": 1.5,  "campo": "esquerda"},
+    {"id": "esquerda",         "nome": "Esquerda",         "min": 1.51, "max": 3.0,  "campo": "esquerda"},
+    {"id": "centro-esquerda",  "nome": "Centro-esquerda",  "min": 3.01, "max": 4.49, "campo": "esquerda"},
+    {"id": "centro",           "nome": "Centro",           "min": 4.5,  "max": 5.5,  "campo": "centro"},
+    {"id": "centro-direita",   "nome": "Centro-direita",   "min": 5.51, "max": 7.0,  "campo": "direita"},
+    {"id": "direita",          "nome": "Direita",          "min": 7.01, "max": 8.5,  "campo": "direita"},
+    {"id": "extrema-direita",  "nome": "Extrema-direita",  "min": 8.51, "max": 10,   "campo": "direita"}
+  ],
+  "partidos": {
+    "PSOL":          {"nota": 1.28},
+    "PCdoB":         {"nota": 1.92},
+    "PT":            {"nota": 2.97},
+    "PDT":           {"nota": 3.92},
+    "PSB":           {"nota": 4.05},
+    "REDE":          {"nota": 4.77},
+    "CIDADANIA":     {"nota": 4.92, "obs": "nota do PPS, nome anterior"},
+    "PV":            {"nota": 5.29},
+    "AVANTE":        {"nota": 6.32},
+    "SOLIDARIEDADE": {"nota": 6.5,  "obs": "nota do SDD"},
+    "PROS":          {"nota": 7.47},
+    "MDB":           {"nota": 7.01},
+    "PSD":           {"nota": 7.09},
+    "PSDB":          {"nota": 7.11},
+    "PODE":          {"nota": 7.24, "obs": "Podemos"},
+    "REPUBLICANOS":  {"nota": 7.78, "obs": "nota do PRB, nome anterior"},
+    "PL":            {"nota": 7.78, "obs": "nota do PR, nome anterior"},
+    "DC":            {"nota": 8.11},
+    "NOVO":          {"nota": 8.13},
+    "PP":            {"nota": 8.2,  "obs": "Progressistas"},
+    "PSC":           {"nota": 8.33},
+    "PATRIOTA":      {"nota": 8.55},
+    "UNIÃO":         {"nota": 8.34, "estimado": true, "obs": "partido criado em 2022; média das notas de PSL (8,11) e DEM (8,57), que se fundiram"},
+    "PRD":           {"nota": 7.33, "estimado": true, "obs": "partido criado em 2023; média das notas de PTB (6,10) e Patriota (8,55), que se fundiram"}
+  },
+  "sem_classificacao": ["MISSÃO", "S.PART."]
+}
