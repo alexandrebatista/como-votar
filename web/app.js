@@ -34,6 +34,11 @@ function compare(value, ref, refLabel, { unit = 'pct' } = {}) {
 const stat = (n, l, extra = '') => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div>${extra}</div>`;
 
 /* ---------- lista ---------- */
+// Estado da lista: sobrevive a abrir um perfil e voltar (memória) e a recarregar a página (sessionStorage).
+const LISTA_KEY = 'como-votar:lista';
+const listState = (() => { try { return JSON.parse(sessionStorage.getItem(LISTA_KEY)) || {}; } catch { return {}; } })();
+const saveState = () => { try { sessionStorage.setItem(LISTA_KEY, JSON.stringify(listState)); } catch { /* sem armazenamento */ } };
+
 async function viewList() {
   document.title = 'Como Votar — atuação de deputados federais';
   const ide = await load('data/ideologia.json');
@@ -45,9 +50,9 @@ async function viewList() {
   const SEM = '-'; // "sem classificação"
 
   // ----- visualização em tabela -----
-  let visao = 'cartoes'; // 'cartoes' | 'tabela'
-  try { visao = localStorage.getItem('visao') === 'tabela' ? 'tabela' : 'cartoes'; } catch { /* sem armazenamento */ }
-  const ord = { k: 'nome', dir: 1 };
+  let visao = listState.visao || 'cartoes'; // 'cartoes' | 'tabela'
+  if (!listState.visao) { try { visao = localStorage.getItem('visao') === 'tabela' ? 'tabela' : 'cartoes'; } catch { /* sem armazenamento */ } }
+  const ord = listState.ord || { k: 'nome', dir: 1 };
   const nfl = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
   const pctF = v => (v == null ? '—' : nfl(v) + '%');
   const mediaNac = meta.nacional.gasto_mensal.media;
@@ -97,7 +102,7 @@ async function viewList() {
   };
   let listaAtual = [];
 
-  let fonte = 'pesquisa'; // 'pesquisa' (nota do partido) | 'voto' (como o deputado vota)
+  let fonte = listState.fonte || 'pesquisa'; // 'pesquisa' (nota do partido) | 'voto' (como o deputado vota)
   const faixaOf = d => (fonte === 'voto' ? d.voto_faixa : d.faixa) || SEM;
   const notaPartido = p => (fonte === 'voto' ? idv.partidos[p]?.nota : ide.partidos[p]?.nota) ?? 99;
   let partyCount = {}, faixaCount = {}, partyFaixas = {};
@@ -114,7 +119,7 @@ async function viewList() {
   const sortedParties = () => [...allParties].sort((x, y) => notaPartido(x) - notaPartido(y) || x.localeCompare(y, 'pt-BR'));
   const faixas = [...ide.faixas.map(f => ({ id: f.id, nome: f.nome })), { id: SEM, nome: 'Sem classificação' }];
   const CAND_PADRAO = ['reeleicao']; // a lista abre só com candidatos à reeleição
-  const selIde = new Set(), selPt = new Set(), selCand = new Set(CAND_PADRAO);
+  const selIde = new Set(listState.ide || []), selPt = new Set(listState.pt || []), selCand = new Set(listState.cand || CAND_PADRAO);
   const candPadrao = () => selCand.size === CAND_PADRAO.length && CAND_PADRAO.every(c => selCand.has(c));
   const CAND = [
     ['reeleicao', 'Candidato a deputado federal (reeleição)'],
@@ -127,7 +132,7 @@ async function viewList() {
     <h1>Como o seu deputado atuou?</h1>
     <p class="muted">Escolha um deputado federal para ver propostas, votos, gastos e presença na legislatura 2023–2026.</p>
     <div class="filters">
-      <input type="search" id="q" placeholder="Buscar por nome…" aria-label="Buscar por nome" autofocus>
+      <input type="search" id="q" placeholder="Buscar por nome…" aria-label="Buscar por nome">
       <select id="uf" aria-label="Estado"><option value="">Todos os estados</option>${ufs.map(u => `<option>${u}</option>`).join('')}</select>
       <label class="check"><input type="checkbox" id="ativos" checked> só deputados em exercício</label>
       <button type="button" id="clear" hidden>Restaurar filtros padrão</button>
@@ -166,6 +171,7 @@ async function viewList() {
     <div class="grid" id="grid"></div>`;
   const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const q = document.getElementById('q'), uf = document.getElementById('uf'), clear = document.getElementById('clear'), ativos = document.getElementById('ativos');
+  q.value = listState.q || ''; uf.value = listState.uf || ''; ativos.checked = listState.ativos !== false;
 
   // um partido está disponível se nenhuma orientação foi escolhida ou se algum deputado dele está em uma das escolhidas
   // (pela pesquisa todo o partido tem uma só faixa; pelo voto um partido pode ter deputados em várias)
@@ -202,6 +208,8 @@ async function viewList() {
       : deps.filter(d => (!ativos.checked || d.em_exercicio) && (!selCand.size || selCand.has(d.cand)) && (!uf.value || d.uf === uf.value)
         && (!selPt.size || selPt.has(d.partido)) && (!selIde.size || selIde.has(faixaOf(d))));
     listaAtual = list;
+    Object.assign(listState, { q: q.value, uf: uf.value, ativos: ativos.checked, ide: [...selIde], pt: [...selPt], cand: [...selCand], fonte, visao, ord });
+    saveState();
     const tabela = visao === 'tabela';
     app.classList.toggle('wide', tabela);
     document.querySelectorAll('.viewb').forEach(b => { const on = b.dataset.visao === visao; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
@@ -233,6 +241,7 @@ async function viewList() {
   clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); selCand.clear(); CAND_PADRAO.forEach(c => selCand.add(c)); q.value = ''; uf.value = ''; ativos.checked = true; render(); });
   [q, uf, ativos].forEach(el => el.addEventListener('input', render));
   render();
+  if (!listState.visitou) { q.focus({ preventScroll: true }); listState.visitou = true; saveState(); }
 }
 
 /* ---------- perfil ---------- */
@@ -584,11 +593,21 @@ async function methodology() {
 }
 
 /* ---------- roteador ---------- */
+let viewAtual = null; // 'lista' | 'perfil'
 async function route() {
   const m = location.hash.match(/^#\/d\/(\d+)/);
+  if (viewAtual === 'lista') { listState.scrollY = window.scrollY; saveState(); } // posição antes de sair da lista
   try {
-    if (m) await viewDep(m[1]); else await viewList();
-    window.scrollTo(0, 0);
+    if (m) {
+      await viewDep(m[1]);
+      viewAtual = 'perfil';
+      window.scrollTo(0, 0);
+    } else {
+      const voltando = viewAtual === 'perfil';
+      await viewList();
+      viewAtual = 'lista';
+      window.scrollTo(0, voltando ? listState.scrollY || 0 : 0);
+    }
   } catch (e) {
     console.error(e);
     app.innerHTML = `<div class="notice">Não foi possível carregar os dados (${esc(e.message)}). Se abriu o arquivo direto do disco, sirva a pasta <code>web/</code> com um servidor local (<code>python3 -m http.server</code>).</div>`;
@@ -596,5 +615,10 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 methodology().catch(e => console.error('metodologia:', e));
+load('data/meta.json').then(meta => {
+  const el = document.getElementById('atualizacao');
+  if (!el) return;
+  el.innerHTML = `<b>Dados atualizados em ${fdate(meta.gerado_em)}</b> · votos e presença até ${fdate(meta.dados_ate)} · gastos até ${fmes(meta.ceap_ate)} · candidaturas: registro do TSE de ${esc(meta.candidaturas_tse_em)}`;
+}).catch(e => console.error('cabeçalho:', e));
 route();
 })();

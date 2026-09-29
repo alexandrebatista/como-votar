@@ -36,6 +36,8 @@ a { color: var(--accent); }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.3rem; letter-spacing: .01em; text-decoration: none; color: #fff; }
 .brand svg { flex: none; }
 .top .tag { color: rgba(255, 255, 255, .92); font-size: .9rem; }
+.top .upd { flex-basis: 100%; color: rgba(255, 255, 255, .9); font-size: .8rem; }
+.top .upd b { color: var(--brand-yellow); font-weight: 600; }
 .tag, .muted { color: var(--muted); }
 .small { font-size: .85rem; }
 h1 { font-size: 1.6rem; margin: 20px 0 6px; line-height: 1.2; color: var(--heading); }
