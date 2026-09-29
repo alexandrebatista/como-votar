@@ -34,6 +34,27 @@ function compare(value, ref, refLabel, { unit = 'pct' } = {}) {
 const stat = (n, l, extra = '') => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div>${extra}</div>`;
 
 /* ---------- lista ---------- */
+// Abas por cargo da candidatura em 2026 (vice e suplentes ficam na aba do cargo principal)
+const CARGOS = [
+  ['federal', 'Deputado federal (reeleição)', 'Candidatos a deputado federal: quem concorre à reeleição'],
+  ['senador', 'Senador', 'Candidatos a senador, incluindo primeiro e segundo suplentes'],
+  ['governador', 'Governador', 'Candidatos a governador, incluindo vice'],
+  ['estadual', 'Deputado estadual', 'Candidatos a deputado estadual ou distrital'],
+  ['presidente', 'Presidente', 'Candidatos a presidente, incluindo vice'],
+  ['nao', 'Sem candidatura', 'Não encontrados no registro de candidaturas do TSE'],
+  ['todos', 'Todos', 'Todos os deputados, com ou sem candidatura'],
+];
+const CARGO_PADRAO = 'federal';
+const cargoDe = d => {
+  if (d.cand === 'nao') return 'nao';
+  const c = (d.cand_cargo || '').toLowerCase();
+  if (c === 'deputado federal') return 'federal';
+  if (c.includes('senador') || c.includes('suplente')) return 'senador';
+  if (c.includes('governador')) return 'governador';
+  if (c.includes('estadual') || c.includes('distrital')) return 'estadual';
+  if (c.includes('presidente')) return 'presidente';
+  return 'nao';
+};
 // Estado da lista: sobrevive a abrir um perfil e voltar (memória) e a recarregar a página (sessionStorage).
 const LISTA_KEY = 'como-votar:lista';
 const listState = (() => { try { return JSON.parse(sessionStorage.getItem(LISTA_KEY)) || {}; } catch { return {}; } })();
@@ -58,16 +79,15 @@ async function viewList() {
   const pctF = v => (v == null ? '—' : nfl(v) + '%');
   const mediaNac = meta.nacional.gasto_mensal.media;
   const CAND_TXT = d => {
-    const base = d.cand === 'reeleicao' ? `Reeleição · nº ${d.cand_numero}` : d.cand === 'outro' ? `Candidato a ${d.cand_cargo}` : d.cand_obs === 'substituido' ? 'Registro substituído no TSE' : 'Sem candidatura';
+    const base = d.cand === 'reeleicao' ? `Reeleição · nº ${d.cand_numero}` : d.cand === 'outro' ? `Candidato a ${d.cand_cargo} · nº ${d.cand_numero}` : d.cand_obs === 'substituido' ? 'Registro substituído no TSE' : 'Sem candidatura';
     return d.cand_obs === 'multiplos' ? `${base} (mais de um registro)` : base;
   };
-  const CAND_ORD = { reeleicao: 0, outro: 1, nao: 2 };
   // v = valor para ordenar; h = HTML da célula; c = texto para o CSV; num = alinhar à direita
   const COLS = [
     { k: 'nome', t: 'Deputado', v: d => d.nome, h: d => `<a href="#/d/${d.id}">${esc(d.nome)}</a>${d.em_exercicio ? '' : ' <span class="muted small">(fora de exercício)</span>'}`, c: d => d.nome },
     { k: 'partido', t: 'Partido', v: d => d.partido, h: d => esc(d.partido), c: d => d.partido },
     { k: 'uf', t: 'UF', v: d => d.uf, h: d => esc(d.uf), c: d => d.uf },
-    { k: 'cand', t: 'Candidatura em 2026', v: d => CAND_ORD[d.cand], h: d => esc(CAND_TXT(d)), c: d => CAND_TXT(d) },
+    { k: 'cand', t: 'Candidatura em 2026', v: d => CARGOS.findIndex(c => c[0] === cargoDe(d)), h: d => esc(CAND_TXT(d)), c: d => CAND_TXT(d) },
     { k: 'pesq', t: 'Ideologia (pesquisa)', num: 1, v: d => d.nota_pesquisa, h: d => (d.nota_pesquisa == null ? '—' : `${esc(faixaNome[d.faixa])} · ${nfl(d.nota_pesquisa)}`), c: d => (d.nota_pesquisa == null ? '' : `${faixaNome[d.faixa]} (${nfl(d.nota_pesquisa)})`) },
     { k: 'voto', t: 'Ideologia (pelo voto)', num: 1, v: d => d.voto_nota, h: d => (d.voto_nota == null ? '—' : `${esc(faixaNome[d.voto_faixa])} · ${nfl(d.voto_nota)}`), c: d => (d.voto_nota == null ? '' : `${faixaNome[d.voto_faixa]} (${nfl(d.voto_nota)})`) },
     { k: 'pres', t: 'Presença em sessões', num: 1, v: d => d.pct_presenca, h: d => pctF(d.pct_presenca), c: d => d.pct_presenca ?? '' },
@@ -122,28 +142,19 @@ async function viewList() {
   // partidos do mais à esquerda ao mais à direita; sem classificação por último
   const sortedParties = () => [...allParties].sort((x, y) => notaPartido(x) - notaPartido(y) || x.localeCompare(y, 'pt-BR'));
   const faixas = [...ide.faixas.map(f => ({ id: f.id, nome: f.nome })), { id: SEM, nome: 'Sem classificação' }];
-  const CAND_PADRAO = ['reeleicao']; // a lista abre só com candidatos à reeleição
-  const selIde = new Set(listState.ide || []), selPt = new Set(listState.pt || []), selCand = new Set(listState.cand || CAND_PADRAO);
-  const candPadrao = () => selCand.size === CAND_PADRAO.length && CAND_PADRAO.every(c => selCand.has(c));
-  const CAND = [
-    ['reeleicao', 'Candidato a deputado federal (reeleição)'],
-    ['outro', 'Candidato a outro cargo'],
-    ['nao', 'Sem candidatura em 2026'],
-  ];
-  let candCount = {};
+  const selIde = new Set(listState.ide || []), selPt = new Set(listState.pt || []);
+  let cargo = CARGOS.some(c => c[0] === listState.cargo) ? listState.cargo : CARGO_PADRAO; // aba da lista
+  let cargoCount = {};
 
   app.innerHTML = `
     <h1>Como o seu deputado atuou?</h1>
     <p class="muted">Escolha um deputado federal para ver propostas, votos, gastos e presença na legislatura 2023–2026.</p>
+    <div class="cargotabs" role="tablist" aria-label="Cargo a que o deputado concorre em 2026 (registro do TSE)" id="cargotabs"></div>
     <div class="filters">
       <input type="search" id="q" placeholder="Buscar por nome…" aria-label="Buscar por nome">
       <select id="uf" aria-label="Estado"><option value="">Todos os estados</option>${ufs.map(u => `<option>${u}</option>`).join('')}</select>
       <label class="check"><input type="checkbox" id="ativos" checked> só deputados em exercício</label>
       <button type="button" id="clear" hidden>Restaurar padrão</button>
-    </div>
-    <div class="chipgroup" role="group" aria-labelledby="lbl-cand">
-      <div class="glabel" id="lbl-cand">Candidatura em 2026 <span class="muted small">(registro do TSE; escolha uma ou mais)</span></div>
-      <div class="chipbar" id="cand-chips"></div>
     </div>
     <div class="chipgroup" role="radiogroup" aria-labelledby="lbl-fonte">
       <div class="glabel" id="lbl-fonte">Como classificar a orientação ideológica</div>
@@ -190,18 +201,19 @@ async function viewList() {
     // escolher orientação invalida partidos que não pertencem a ela
     [...selPt].forEach(p => { if (!disponivel(p)) selPt.delete(p); });
     document.getElementById('ide-chips').innerHTML = faixas.map(f => chip('ide', f.id, f.nome, faixaCount[f.id], { on: selIde.has(f.id) })).join('');
-    document.getElementById('cand-chips').innerHTML = CAND.map(([id, nome]) => chip('cand', id, nome, candCount[id] || 0, { on: selCand.has(id) })).join('');
+    document.getElementById('cargotabs').innerHTML = CARGOS.map(([id, nome, dica]) =>
+      `<button type="button" role="tab" class="cargotab${cargo === id ? ' on' : ''}" data-cargo="${id}" aria-selected="${cargo === id}" title="${esc(dica)}">${esc(nome)} <span class="n">${cargoCount[id] || 0}</span></button>`).join('');
     document.getElementById('fonte-nota').textContent = NOTA_FONTE[fonte];
     document.querySelectorAll('.segb').forEach(b => { const on = b.dataset.fonte === fonte; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
     document.getElementById('pt-chips').innerHTML = sortedParties().map(p => chip('pt', p, p, partyCount[p], { on: selPt.has(p), off: !disponivel(p) })).join('');
     document.getElementById('pt-note').hidden = !selIde.size;
-    clear.hidden = !(selIde.size || selPt.size || !candPadrao() || fonte !== FONTE_PADRAO || visao !== VISAO_PADRAO || ord.k !== 'nome' || ord.dir !== 1 || q.value || uf.value || !ativos.checked);
+    clear.hidden = !(selIde.size || selPt.size || cargo !== CARGO_PADRAO || fonte !== FONTE_PADRAO || visao !== VISAO_PADRAO || ord.k !== 'nome' || ord.dir !== 1 || q.value || uf.value || !ativos.checked);
   };
   const render = () => {
     // contagens e partidos disponíveis refletem também o filtro de candidatura
     const base = deps.filter(d => !ativos.checked || d.em_exercicio);
-    candCount = {}; base.forEach(d => { candCount[d.cand] = (candCount[d.cand] || 0) + 1; });
-    recount(selCand.size ? base.filter(d => selCand.has(d.cand)) : base);
+    cargoCount = { todos: base.length }; base.forEach(d => { cargoCount[cargoDe(d)] = (cargoCount[cargoDe(d)] || 0) + 1; });
+    recount(cargo === 'todos' ? base : base.filter(d => cargoDe(d) === cargo));
     drawChips();
     const nq = norm(q.value.trim());
     // buscar por nome ignora todos os filtros (inclusive "em exercício" e candidatura): quem digita um nome quer aquela pessoa
@@ -209,10 +221,10 @@ async function viewList() {
     app.classList.toggle('buscando', buscando);
     const list = buscando
       ? deps.filter(d => norm(d.nome).includes(nq))
-      : deps.filter(d => (!ativos.checked || d.em_exercicio) && (!selCand.size || selCand.has(d.cand)) && (!uf.value || d.uf === uf.value)
+      : deps.filter(d => (!ativos.checked || d.em_exercicio) && (cargo === 'todos' || cargoDe(d) === cargo) && (!uf.value || d.uf === uf.value)
         && (!selPt.size || selPt.has(d.partido)) && (!selIde.size || selIde.has(faixaOf(d))));
     listaAtual = list;
-    Object.assign(listState, { q: q.value, uf: uf.value, ativos: ativos.checked, ide: [...selIde], pt: [...selPt], cand: [...selCand], fonte, visao, ord });
+    Object.assign(listState, { q: q.value, uf: uf.value, ativos: ativos.checked, ide: [...selIde], pt: [...selPt], cargo, fonte, visao, ord });
     saveState();
     const tabela = visao === 'tabela';
     app.classList.toggle('wide', tabela);
@@ -226,11 +238,13 @@ async function viewList() {
     grid.innerHTML = list.slice(0, 120).map(d => `
       <a class="dep" href="#/d/${d.id}"><img loading="lazy" src="${esc(d.foto)}" alt=""><div><b>${esc(d.nome)}</b><span>${esc(d.partido)} · ${esc(d.uf)}${faixaOf(d) !== SEM ? ' · ' + esc(faixaNome[faixaOf(d)]) : ''}${d.em_exercicio ? '' : ' · fora de exercício'}</span>${
         (d.cand === 'reeleicao' ? `<span class="candtag">Candidato · nº ${esc(d.cand_numero)}</span>`
-        : d.cand === 'outro' ? `<span class="candtag other">Candidato a ${esc(d.cand_cargo)}</span>`
+        : d.cand === 'outro' ? `<span class="candtag other">${esc(d.cand_cargo)} · nº ${esc(d.cand_numero)}</span>`
         : d.cand_obs === 'substituido' ? '<span class="candtag other">Registro substituído no TSE</span>' : '')
         + (d.cand_obs === 'multiplos' ? '<span class="candtag other">Mais de um registro no TSE</span>' : '')}</div></a>`).join('');
   };
   app.querySelector('.filters').parentElement.addEventListener('click', e => {
+    const tb = e.target.closest('.cargotab');
+    if (tb) { cargo = tb.dataset.cargo; render(); document.querySelector(`.cargotab[data-cargo="${cargo}"]`)?.focus(); return; }
     const vb = e.target.closest('.viewb');
     if (vb) { visao = vb.dataset.visao; render(); return; }
     const so = e.target.closest('.sortb');
@@ -239,12 +253,12 @@ async function viewList() {
     const sb = e.target.closest('.segb');
     if (sb) { fonte = sb.dataset.fonte; render(); return; }
     const b = e.target.closest('.fchip'); if (!b || b.disabled) return;
-    const set = b.dataset.kind === 'ide' ? selIde : b.dataset.kind === 'cand' ? selCand : selPt;
+    const set = b.dataset.kind === 'ide' ? selIde : selPt;
     set.has(b.dataset.id) ? set.delete(b.dataset.id) : set.add(b.dataset.id);
     render();
     document.querySelector(`.fchip[data-kind="${b.dataset.kind}"][data-id="${CSS.escape(b.dataset.id)}"]`)?.focus();
   });
-  clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); selCand.clear(); CAND_PADRAO.forEach(c => selCand.add(c)); q.value = ''; uf.value = ''; ativos.checked = true; fonte = FONTE_PADRAO; visao = VISAO_PADRAO; ord.k = 'nome'; ord.dir = 1; render(); });
+  clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); cargo = CARGO_PADRAO; q.value = ''; uf.value = ''; ativos.checked = true; fonte = FONTE_PADRAO; visao = VISAO_PADRAO; ord.k = 'nome'; ord.dir = 1; render(); });
   [q, uf, ativos].forEach(el => el.addEventListener('input', render));
   render();
   if (!listState.visitou) { q.focus({ preventScroll: true }); listState.visitou = true; saveState(); }

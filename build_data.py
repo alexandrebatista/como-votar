@@ -543,7 +543,7 @@ def main():
             "voto_nota": voto_ide.get(dep, {}).get("nota"),
             "voto_faixa": voto_ide.get(dep, {}).get("faixa"),
             "cand": ("reeleicao" if cands[dep]["reeleicao"] else "outro") if dep in cands else "nao",
-            "cand_numero": cands[dep]["numero"] if dep in cands and cands[dep]["reeleicao"] else None,
+            "cand_numero": cands[dep]["numero"] if dep in cands else None,
             "cand_cargo": cands[dep]["cargo"] if dep in cands else None,
             # observação sobre o registro: 'substituido' (só há registro cujo número foi assumido por outra pessoa)
             # ou 'multiplos' (mais de um registro em vigor; usamos o mais recente)
