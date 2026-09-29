@@ -278,6 +278,14 @@ async function viewDep(id) {
         <h1>${esc(dep.nome)}</h1>
         <div style="margin:4px 0">${candPill}</div>
         <div class="muted">${esc(dep.partido)} · ${esc(dep.uf)} ${ideo} ${dep.em_exercicio ? '' : '<span class="pill">fora de exercício hoje</span>'} · dados de ${fdate(dep.inicio)} a ${fdate(dep.fim)} · <a href="${camaraDep(dep.id)}" target="_blank" rel="noopener">perfil na Câmara ↗</a></div>
+        <div class="sharewrap">
+          <button type="button" id="share" class="tool share" aria-haspopup="menu" aria-expanded="false"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg> Compartilhar</button>
+          <div class="sharemenu" id="sharemenu" role="menu" hidden>
+            <button type="button" role="menuitem" data-a="copy">Copiar link</button>
+            <a role="menuitem" data-a="wa" target="_blank" rel="noopener">WhatsApp</a>
+          </div>
+          <span class="small muted" id="share-msg" role="status" aria-live="polite"></span>
+        </div>
       </div>
     </div>
     ${short ? `<div class="notice">Este deputado exerceu o mandato por poucos meses (${dep.meses}). As comparações com a média podem não ser representativas.</div>` : ''}
@@ -288,6 +296,8 @@ async function viewDep(id) {
     <div id="sec"></div>`;
 
   // âncoras internas sem quebrar o roteador por hash
+  wireShare(dep);
+
   app.querySelectorAll('.tabs a').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
     document.getElementById(a.getAttribute('href').slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -297,6 +307,50 @@ async function viewDep(id) {
   sec.append(...[sectionProp(dep), sectionIde(dep, ide, idv, faixaNome), sectionVotos(dep, vdata), sectionGastos(dep, meta, ufm), sectionPres(dep, nac, ufm)].map(html => {
     const t = document.createElement('div'); t.innerHTML = html.html; if (html.after) html.after(t.firstElementChild); return t.firstElementChild;
   }));
+}
+
+/* ---------- compartilhar ---------- */
+let shareAbort = null; // remove os ouvintes do perfil anterior
+function wireShare(dep) {
+  shareAbort?.abort(); shareAbort = new AbortController();
+  const { signal } = shareAbort;
+  // link canônico do perfil (sem query string nem estado da página)
+  const url = `${location.origin}${location.pathname}#/d/${dep.id}`;
+  const title = `${dep.nome} (${dep.partido}-${dep.uf}) — atuação na Câmara`;
+  const text = `Veja a atuação de ${dep.nome} (${dep.partido}-${dep.uf}) na Câmara dos Deputados: propostas, votos, gastos e presença, com dados abertos.`;
+  const btn = document.getElementById('share'), menu = document.getElementById('sharemenu'), msg = document.getElementById('share-msg');
+  const wa = menu.querySelector('[data-a="wa"]');
+  wa.href = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;
+  let timer;
+  const aviso = t => { msg.textContent = t; clearTimeout(timer); timer = setTimeout(() => { msg.textContent = ''; }, 3000); };
+  const fechar = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(url); }
+    catch { // contexto sem clipboard API: seleção manual
+      const ta = document.createElement('textarea'); ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.append(ta); ta.select();
+      let ok = false; try { ok = document.execCommand('copy'); } catch { /* ok */ }
+      ta.remove(); if (!ok) { aviso('Não foi possível copiar. Copie o endereço da barra do navegador.'); return; }
+    }
+    aviso('Link copiado!');
+  };
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    // em celulares, usa a folha de compartilhamento do sistema
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+      try { await navigator.share({ title, text, url }); } catch (err) { if (err.name !== 'AbortError') aviso('Não foi possível compartilhar.'); }
+      return;
+    }
+    const abrir = menu.hidden; menu.hidden = !abrir; btn.setAttribute('aria-expanded', String(abrir));
+    if (abrir) menu.querySelector('button').focus();
+  });
+  menu.addEventListener('click', e => {
+    const a = e.target.closest('[data-a]'); if (!a) return;
+    if (a.dataset.a === 'copy') copiar();
+    fechar(); if (a.dataset.a === 'copy') btn.focus();
+  });
+  document.addEventListener('click', e => { if (!menu.hidden && !e.target.closest('.sharewrap')) fechar(); }, { signal });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { fechar(); btn.focus(); } }, { signal });
 }
 
 /* ---------- propostas ---------- */

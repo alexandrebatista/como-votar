@@ -197,3 +197,11 @@ th.r .sortb { text-align: right; }
 .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: var(--ink); }
 .dot.pesq { background: #7a5aa6; } .dot.party { background: #1d6b57; } .dot.me { background: var(--ink); }
 .check { display: inline-flex; gap: 6px; align-items: center; font-size: .9rem; min-height: 42px; }
+
+/* compartilhar */
+.sharewrap { position: relative; display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.tool.share { display: inline-flex; align-items: center; gap: 7px; }
+.sharemenu { position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px; min-width: 170px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 20, 60, .14); padding: 4px; display: flex; flex-direction: column; }
+.sharemenu[hidden] { display: none; }
+.sharemenu button, .sharemenu a { font: inherit; font-size: .92rem; text-align: left; padding: 9px 12px; border: 0; background: none; color: var(--ink); border-radius: 7px; cursor: pointer; text-decoration: none; }
+.sharemenu button:hover, .sharemenu a:hover, .sharemenu button:focus-visible, .sharemenu a:focus-visible { background: var(--accent-soft); outline: none; }
