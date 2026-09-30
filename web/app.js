@@ -65,9 +65,12 @@ const ABAS = [
 const LISTA_KEY = 'como-votar:lista:v2';
 const allState = (() => { try { return JSON.parse(sessionStorage.getItem(LISTA_KEY)) || {}; } catch { return {}; } })();
 let listState = {}; // estado da lista da casa atual (um por casa)
+let listAbort = null; // remove os ouvintes da lista anterior (o #app persiste entre telas)
 const saveState = () => { try { sessionStorage.setItem(LISTA_KEY, JSON.stringify(allState)); } catch { /* sem armazenamento */ } };
 
 async function viewList() {
+  listAbort?.abort(); listAbort = new AbortController();
+  const { signal: listSignal } = listAbort;
   listState = (allState[casa.id] ||= {});
   document.title = casa.docTitulo;
   const ide = await load('data/ideologia.json');
@@ -96,7 +99,7 @@ async function viewList() {
     { k: 'nome', t: casa.Papel, v: d => d.nome, h: d => `<a href="#/${casa.rota}/${d.id}">${esc(d.nome)}</a>${d.em_exercicio ? '' : ' <span class="muted small">(fora de exercício)</span>'}`, c: d => d.nome },
     { k: 'partido', t: 'Partido', v: d => d.partido, h: d => esc(d.partido), c: d => d.partido },
     { k: 'uf', t: 'UF', v: d => d.uf, h: d => esc(d.uf), c: d => d.uf },
-    { k: 'cand', t: 'Candidatura em 2026', v: d => ({ reeleicao: 0, outro: 1, nao: 2 })[d.cand], h: d => esc(CAND_TXT(d)), c: d => CAND_TXT(d) },
+    { k: 'cand', t: 'Candidatura em 2026', v: d => ({ reeleicao: 0, outro: 1, nao: 2 })[d.cand] * 1e6 + (Number(d.cand_numero) || 0), h: d => esc(CAND_TXT(d)), c: d => CAND_TXT(d) },
     { k: 'pesq', t: 'Ideologia (pesquisa)', num: 1, v: d => d.nota_pesquisa, h: d => (d.nota_pesquisa == null ? '—' : `${esc(faixaNome[d.faixa])} · ${nfl(d.nota_pesquisa)}`), c: d => (d.nota_pesquisa == null ? '' : `${faixaNome[d.faixa]} (${nfl(d.nota_pesquisa)})`) },
     { k: 'voto', t: 'Ideologia (pelo voto)', num: 1, v: d => d.voto_nota, h: d => (d.voto_nota == null ? '—' : `${esc(faixaNome[d.voto_faixa])} · ${nfl(d.voto_nota)}`), c: d => (d.voto_nota == null ? '' : `${faixaNome[d.voto_faixa]} (${nfl(d.voto_nota)})`) },
     { k: 'pres', t: casa.id === 'senado' ? 'Presença em votações nominais' : 'Presença em sessões', num: 1, v: d => d.pct_presenca, h: d => pctF(d.pct_presenca), c: d => d.pct_presenca ?? '' },
@@ -255,7 +258,7 @@ async function viewList() {
         : d.cand_obs === 'substituido' ? '<span class="candtag other">Registro substituído no TSE</span>' : '')
         + (d.cand_obs === 'multiplos' ? '<span class="candtag other">Mais de um registro no TSE</span>' : '')}</div></a>`).join('');
   };
-  app.querySelector('.filters').parentElement.addEventListener('click', e => {
+  app.addEventListener('click', e => {
     const vb = e.target.closest('.viewb');
     if (vb) { visao = vb.dataset.visao; render(); return; }
     const so = e.target.closest('.sortb');
@@ -268,7 +271,7 @@ async function viewList() {
     set.has(b.dataset.id) ? set.delete(b.dataset.id) : set.add(b.dataset.id);
     render();
     document.querySelector(`.fchip[data-kind="${b.dataset.kind}"][data-id="${CSS.escape(b.dataset.id)}"]`)?.focus();
-  });
+  }, { signal: listSignal });
   clear.addEventListener('click', () => { selIde.clear(); selPt.clear(); reel.checked = true; q.value = ''; uf.value = ''; ativos.checked = true; fonte = FONTE_PADRAO; visao = VISAO_PADRAO; ord.k = 'nome'; ord.dir = 1; render(); });
   [q, uf, ativos, reel].forEach(el => el.addEventListener('input', render));
   render();
@@ -277,6 +280,7 @@ async function viewList() {
 
 /* ---------- perfil ---------- */
 async function viewDep(id) {
+  listAbort?.abort(); // a lista não está mais na tela
   app.classList.remove('wide', 'buscando'); // estados da lista não valem no perfil
   app.innerHTML = '<p class="muted">Carregando…</p>';
   const [meta, dep, vdata] = await Promise.all([load(casa.base + 'meta.json'), load(`${casa.base}d/${id}.json`), load(casa.base + 'votacoes.json')]);
