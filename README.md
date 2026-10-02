@@ -25,6 +25,14 @@ O front (`web/`) é estático: HTML + JS puro, sem build. Pode ser publicado em 
 - **Período do deputado:** do 1º ao último registro em presença/votação; licenças no meio do mandato não são descontadas.
 - Médias só incluem deputados com ≥ 6 meses de mandato.
 
+## Período de exercício
+
+Presença, votos e gastos só contam os dias/meses em que o deputado ocupou a cadeira. Os intervalos vêm do histórico de
+situação da Câmara (`/deputados/{id}/historico`, baixado para `data_raw/historico/`): só a situação "Exercício" conta;
+licença, suspensão, suplência, vacância e fim de mandato encerram o intervalo. Um suplente que assume, sai e volta tem
+vários intervalos (campo `periodos` no JSON de cada deputado). Sem esse histórico, o código cai no 1º e último registro
+de presença.
+
 ## Orientação da liderança e ideologia
 
 - `votacoesOrientacoes-AAAA.csv` traz a orientação de cada bancada (partido, federação, bloco, Governo, Oposição…).

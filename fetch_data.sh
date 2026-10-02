@@ -27,4 +27,8 @@ if [ ! -s consulta_cand_2026_BRASIL.csv ] || [ -n "${REFRESH:-}" ]; then
   unzip -o -q -j cand2026.zip consulta_cand_2026_BRASIL.csv && rm cand2026.zip
 fi
 get $A/deputados/csv/deputados.csv deputados-csv.csv
+# histórico de situação de cada deputado (períodos de exercício, licenças, suplências)
+mkdir -p historico
+python3 -c "import json;print('\n'.join(str(d['id']) for d in json.load(open('deputados.json'))['dados']))" | sort -u \
+  | xargs -P 6 -I{} sh -c 'if [ ! -s historico/{}.json ] || [ -n "${REFRESH:-}" ]; then curl -sSf --retry 5 --retry-delay 3 -o historico/{}.json.tmp "https://dadosabertos.camara.leg.br/api/v2/deputados/{}/historico" && mv historico/{}.json.tmp historico/{}.json; fi'
 echo ok

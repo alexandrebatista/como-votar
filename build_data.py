@@ -88,6 +88,33 @@ def ym_range(a, b):
     return out
 
 
+def periodos_exercicio(historico, fim_geral, inicio_leg="2023-02-01"):
+    """Intervalos [ini, fim] (datas AAAA-MM-DD) em que o deputado ocupou a cadeira na legislatura, a partir do
+    histórico de situação da Câmara. Só 'Exercício' conta: licença, suspensão, suplência, vacância e fim de mandato
+    encerram o intervalo; 'CONVOCADO' (aguardando posse) e entradas sem situação não mudam o estado."""
+    ev = sorted((x["dataHora"][:10], x["situacao"]) for x in historico if x.get("situacao") not in (None, "CONVOCADO"))
+    out, ini = [], None
+    for dt, sit in ev:
+        if sit == "Exercício":
+            if ini is None:
+                ini = dt
+        elif ini is not None:
+            out.append([ini, dt])
+            ini = None
+    if ini is not None:
+        out.append([ini, fim_geral])
+    res = []
+    for a, b in out:
+        a, b = max(a, inicio_leg), min(b, fim_geral)
+        if a <= b:
+            res.append([a, b])
+    return res
+
+
+def em_periodos(periodos, d):
+    return any(a <= d <= b for a, b in periodos)
+
+
 def escalar(votos_por_dep, colunas, min_votos_dep=30, iteracoes=40):
     """Posição unidimensional de cada deputado a partir dos votos (Sim=+1, Não=-1), modelo de posto 1 com
     média por votação: x_ij ~ m_j + a_i * b_j, por mínimos quadrados alternados. Devolve {deputado: a_i}
@@ -503,12 +530,26 @@ def main():
 
     # ---------- período de exercício ----------
     sess_por_data = sorted((d, i) for i, d in sessoes.items())
-    ativos = {}
-    for dep in deps:
-        if dep in first_seen:
-            ativos[dep] = (first_seen[dep], last_seen[dep])
-    # mês em que os dados vão até (evita contar meses futuros/incompletos demais)
     fim_geral = max(last_seen.values())
+    # Período real de exercício: histórico de situação da Câmara (data_raw/historico/<id>.json), para não contar
+    # como mandato os meses em que o titular/suplente estava fora da cadeira. Sem histórico, cai no 1º/último registro.
+    periodos = {}
+    for dep in deps:
+        hp = os.path.join(RAW, "historico", f"{dep}.json")
+        if os.path.exists(hp):
+            with open(hp, encoding="utf-8") as f:
+                periodos[dep] = periodos_exercicio(json.load(f)["dados"], fim_geral)
+        elif dep in first_seen:
+            periodos[dep] = [[first_seen[dep], last_seen[dep]]]
+    ativos, meses_ex = {}, {}
+    for dep, per in periodos.items():
+        if per:
+            ativos[dep] = (per[0][0], per[-1][1])  # primeiro dia e último dia de exercício (para exibição)
+            meses_ex[dep] = sorted({m for a, b in per for m in ym_range(a[:7], b[:7])})
+    sem_hist = sum(1 for d in deps if not os.path.exists(os.path.join(RAW, "historico", f"{d}.json")))
+    print(f"{len(ativos)} deputados com período de exercício ({sem_hist} sem histórico);",
+          f"{sum(1 for p in periodos.values() if len(p) > 1)} com mais de um intervalo")
+    # mês em que os dados vão até (evita contar meses futuros/incompletos demais)
     print("dados até", fim_geral, "| CEAP até", ultimo_ym)
 
     # ---------- janela de gastos: só meses completos ----------
@@ -516,7 +557,7 @@ def main():
     # Corte: último mês cuja média nacional é >= 80% da mediana dos 12 meses anteriores.
     serie_nac = {}
     for m in ym_range("2023-02", ultimo_ym):
-        ativos_m = [d for d in ativos if ativos[d][0][:7] <= m <= ativos[d][1][:7]]
+        ativos_m = [d for d in ativos if m in meses_ex[d]]
         if ativos_m:
             serie_nac[m] = round(statistics.mean(gasto_mes[d].get(m, 0.0) for d in ativos_m), 2)
     ms = sorted(serie_nac)
@@ -535,13 +576,14 @@ def main():
         if dep not in ativos:
             continue
         ini, fim = ativos[dep]
-        meses = ym_range(ini[:7], min(fim[:7], ceap_fim))
+        meses = [m for m in meses_ex[dep] if m <= ceap_fim]
         n_meses = max(len(meses), 1)
         total = sum(gasto_mes[dep].get(m, 0.0) for m in meses)
         # presença
-        sess_periodo = [i for d, i in sess_por_data if ini <= d <= fim]
+        sess_periodo = [i for d, i in sess_por_data if em_periodos(periodos[dep], d)]
         pres = [i for i in sess_periodo if i in pres_sess[dep]]
-        vots_periodo = [vid for vid, v in votacoes.items() if ini <= v["data"] <= fim]
+        vots_periodo = [vid for vid, v in votacoes.items() if em_periodos(periodos[dep], v["data"])]
+        votos_periodo = sum(1 for vid in vots_periodo if vid in votos_dep[dep])
         resumo[dep] = {
             **info,
             "faixa": ideologia.get(info["partido"], {}).get("faixa"),
@@ -557,8 +599,8 @@ def main():
             "gasto_total": round(total, 2), "gasto_mensal": round(total / n_meses, 2),
             "sessoes": len(sess_periodo), "presencas": len(pres),
             "pct_presenca": round(100 * len(pres) / len(sess_periodo), 1) if sess_periodo else None,
-            "votacoes_periodo": len(vots_periodo), "votos": len(votos_dep[dep]),
-            "pct_votos": round(100 * len(votos_dep[dep]) / len(vots_periodo), 1) if vots_periodo else None,
+            "votacoes_periodo": len(vots_periodo), "votos": votos_periodo,
+            "pct_votos": round(100 * votos_periodo / len(vots_periodo), 1) if vots_periodo else None,
         }
         ps = autor.get(dep, [])
         resumo[dep]["n_prop"] = sum(1 for p, o in ps if o == 1 and p in pinfo and pinfo[p]["tp"] in TIPOS_PRINCIPAIS)
@@ -627,7 +669,7 @@ def main():
         }
         com_maioria = sum(1 for v in vs if v[2])
         # gastos
-        meses = ym_range(ini[:7], min(fim[:7], ceap_fim))
+        meses = [m for m in meses_ex[dep] if m <= ceap_fim]
         serie = [[m, round(gasto_mes[dep].get(m, 0.0), 2)] for m in meses]
         categorias = sorted(
             ([c, round(v, 2), round(v / r["meses"], 2), cat_nac.get(c, 0.0), cat_uf[r["uf"]].get(c, 0.0) if r["uf"] in cat_uf else None]
@@ -636,11 +678,12 @@ def main():
         # presença por ano
         por_ano = {}
         for y in YEARS:
-            sess_y = [i for d, i in sess_por_data if ini <= d <= fim and d.startswith(str(y))]
+            sess_y = [i for d, i in sess_por_data if em_periodos(periodos[dep], d) and d.startswith(str(y))]
             if sess_y:
                 por_ano[y] = [sum(1 for i in sess_y if i in pres_sess[dep]), len(sess_y)]
         out = {
             **{k: r[k] for k in ("id", "nome", "partido", "uf", "foto", "inicio", "fim", "meses", "em_exercicio")},
+            "periodos": periodos[dep],
             "ideologia": ideologia.get(r["partido"]),
             "ideologia_voto": voto_ide.get(dep),
             "candidatura": cands.get(dep),
